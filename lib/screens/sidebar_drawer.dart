@@ -128,7 +128,10 @@ class SidebarDrawer extends StatelessWidget {
         ),
       ),
       tileColor: isSelected ? const Color(0xFF1A1A2E) : null,
-      onTap: onTap,
+      onTap: () {
+        Navigator.pop(context);
+        onTap();
+      },
     );
   }
 }
