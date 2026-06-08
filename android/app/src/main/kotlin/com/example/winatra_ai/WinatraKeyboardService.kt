@@ -1,22 +1,23 @@
 ﻿package com.example.winatra_ai
 
+import android.app.*
+import android.content.ClipboardManager
 import android.content.Context
-import android.graphics.Color
-import android.inputmethodservice.InputMethodService
+import android.content.Intent
+import android.os.Build
+import android.os.IBinder
 import android.util.Log
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
-import android.view.inputmethod.InputConnection
-import android.widget.*
+import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.*
+import kotlinx.coroutines.tasks.await          // <--- TAMBAHKAN INI
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.Date
+import java.util.Date                         // <--- TAMBAHKAN INI
 
 class WinatraKeyboardService : InputMethodService() {
 
