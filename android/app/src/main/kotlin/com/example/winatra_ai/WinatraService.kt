@@ -94,6 +94,12 @@ class WinatraService : Service() {
                 toggleMode()
             }
             ACTION_CLIPBOARD_RESULT -> {
+                // Cek login sebelum memproses
+                if (FirebaseAuth.getInstance().currentUser == null) {
+                    Log.w(TAG, "User not logged in, ignoring ACTION_CLIPBOARD_RESULT")
+                    showResultNotification("Winatra AI", "Silakan login terlebih dahulu untuk menggunakan fitur notifikasi.")
+                    return START_STICKY
+                }
                 val question = intent.getStringExtra(ClipboardActivity.EXTRA_QUESTION) ?: ""
                 val modeType = intent.getStringExtra(ClipboardActivity.EXTRA_MODE_TYPE) ?: "answer"
                 Log.d(TAG, "CLIPBOARD_RESULT received, question length=${question.length}, modeType=$modeType")
@@ -394,6 +400,13 @@ class WinatraService : Service() {
     private fun processClipboardResult(question: String, modeType: String = "answer") {
         val mode = getMode()
         Log.d(TAG, "processClipboardResult: question length=${question.length}, mode=$mode, modeType=$modeType")
+
+        // PENTING: Cek login sebelum memproses apapun
+        if (FirebaseAuth.getInstance().currentUser == null) {
+            Log.w(TAG, "User not logged in, ignoring clipboard request")
+            showResultNotification("Winatra AI", "Silakan login terlebih dahulu untuk menggunakan fitur notifikasi.")
+            return
+        }
 
         if (question.isEmpty()) {
             Log.w(TAG, "Clipboard is empty!")
