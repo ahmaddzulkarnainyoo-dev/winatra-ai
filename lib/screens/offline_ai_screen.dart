@@ -48,7 +48,7 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
       setState(() => _statusMessage = 'Memeriksa model...');
       
       _ai = OneNm(
-        model: OneNmModel.gemma2b,
+        model: OneNmModel.tinyllama,
         onProgress: (status) {
           if (mounted) {
             setState(() => _statusMessage = status);
@@ -65,6 +65,39 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
       });
     } catch (e) {
       setState(() => _statusMessage = 'Error: $e');
+    }
+  }
+
+  String _buildPrompt(String question, String context) {
+    if (context.isNotEmpty) {
+      return '''
+Anda adalah asisten AI yang ramah, cerdas, dan suka membantu. Jawab pertanyaan berikut dengan BAHASA INDONESIA yang baik dan benar.
+
+Gunakan informasi dari TEKS yang disediakan sebagai sumber utama jawaban Anda. Jika teks tidak mengandung jawaban, katakan "Berdasarkan materi yang diupload, informasi tentang pertanyaan ini tidak tersedia." Jangan mengarang jawaban.
+
+**Aturan penting:**
+- JANGAN menjawab dengan satu kata. Berikan penjelasan minimal 3 kalimat.
+- JANGAN menggunakan bahasa Inggris kecuali untuk istilah teknis yang tidak ada padanannya (itupun beri penjelasan).
+- Jawab dengan jelas, terstruktur, dan mudah dipahami oleh pelajar.
+
+TEKS YANG DIUPLOAD:
+$context
+
+PERTANYAAN: $question
+
+JAWABAN (dalam Bahasa Indonesia, minimal 3 kalimat):''';
+    } else {
+      return '''
+Anda adalah asisten AI yang ramah, cerdas, dan suka membantu. Jawab pertanyaan berikut dengan BAHASA INDONESIA yang baik dan benar.
+
+**Aturan penting:**
+- JANGAN menjawab dengan satu kata. Berikan penjelasan minimal 3 kalimat.
+- JANGAN menggunakan bahasa Inggris kecuali untuk istilah teknis.
+- Jika tidak tahu, katakan "Maaf, saya belum bisa menjawab pertanyaan itu dengan yakin. Silakan tanyakan hal lain atau upload materi terkait."
+
+PERTANYAAN: $question
+
+JAWABAN (dalam Bahasa Indonesia, minimal 3 kalimat):''';
     }
   }
 
@@ -119,25 +152,13 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
     });
 
     try {
-      // Cari konteks dari RAG jika ada dokumen
+      // Dapatkan konteks dari RAG (jika ada dokumen terupload)
       String context = '';
       if (_useRAG) {
         context = await RAGService.searchContext(message);
       }
 
-      // Buat prompt dengan konteks RAG
-      String prompt = message;
-      if (context.isNotEmpty) {
-        prompt = """Jawab pertanyaan berdasarkan teks berikut. Jika tidak ada jawaban di teks, katakan 'Tidak ada di materi'.
-
-TEKS:
-$context
-
-PERTANYAAN: $message
-
-JAWABAN:""";
-      }
-
+      final prompt = _buildPrompt(message, context);
       final reply = await _ai.chat(prompt);
       if (mounted) {
         setState(() {

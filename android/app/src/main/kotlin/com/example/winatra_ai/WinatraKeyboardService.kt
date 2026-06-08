@@ -659,8 +659,9 @@ class WinatraKeyboardService : InputMethodService() {
         else
             "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
 
+        val model = if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile"
         val json = JSONObject().apply {
-            put("model", "llama-3.3-70b-versatile")
+            put("model", model)
             put("messages", org.json.JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")

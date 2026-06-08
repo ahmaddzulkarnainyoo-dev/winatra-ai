@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class RAGService {
@@ -85,22 +84,17 @@ class RAGService {
         return '';
       }
 
-      // Simple relevance scoring: count keyword matches
+      final queryLower = query.toLowerCase();
       final results = <Map<String, dynamic>>[];
-      
+
       for (final doc in _documents) {
         final content = doc['content'] ?? '';
-        final queryLower = query.toLowerCase();
         final contentLower = content.toLowerCase();
-        
-        // Hitung score berdasarkan keyword match
         int score = 0;
-        final keywords = queryLower.split(' ');
+        final keywords = queryLower.split(RegExp(r'\s+')).where((k) => k.length > 2);
+
         for (final keyword in keywords) {
-          if (keyword.length > 2) {
-            // Count occurrences
-            score += contentLower.split(keyword).length - 1;
-          }
+          score += contentLower.split(keyword).length - 1;
         }
 
         if (score > 0) {
@@ -117,35 +111,42 @@ class RAGService {
         return '';
       }
 
-      // Sort by score
       results.sort((a, b) => b['score'].compareTo(a['score']));
-
-      // Ambil top K chunks (split by paragraf)
       final topResults = results.take(topK);
-      
-      // Gabungkan menjadi satu konteks
-      final contextParts = <String>[];
+      final buffer = StringBuffer();
+      const maxContextLength = 1500;
+
       for (final result in topResults) {
         final content = result['content'] as String;
         final name = result['name'] as String;
-        
-        // Split by paragraph, ambil yang relevant
-        final paragraphs = content.split('\n\n');
+        final paragraphs = content.split(RegExp(r'\r?\n\r?\n'));
+
         for (final para in paragraphs) {
-          if (para.toLowerCase().contains(query.toLowerCase())) {
-            contextParts.add('[$name] $para');
-            if (contextParts.length >= topK) break;
+          if (para.toLowerCase().contains(queryLower)) {
+            final chunk = '[$name] ${para.trim()}';
+            if (buffer.length + chunk.length > maxContextLength) {
+              break;
+            }
+            buffer.writeln(chunk);
+            buffer.writeln();
           }
+          if (buffer.length >= maxContextLength) break;
         }
-        if (contextParts.length >= topK) break;
+        if (buffer.length >= maxContextLength) break;
       }
 
-      final context = contextParts.isNotEmpty 
-        ? contextParts.join('\n\n') 
-        : (results.first['content'] as String).substring(0, 500);
+      if (buffer.isNotEmpty) {
+        final context = buffer.toString().trim();
+        print('RAGService: Found relevant context (${context.length} chars)');
+        return context;
+      }
 
-      print('RAGService: Found ${contextParts.length} relevant chunks');
-      return context;
+      final fallbackContent = results.first['content'] as String;
+      final fallback = fallbackContent.length <= 500
+          ? fallbackContent
+          : fallbackContent.substring(0, 500);
+      print('RAGService: Using fallback content (${fallback.length} chars)');
+      return fallback;
     } catch (e) {
       print('RAGService: Error searching context: $e');
       return '';
