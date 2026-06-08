@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Winatra AI Admin Dashboard</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0D0D1A; color: #fff; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #9B7EFF; margin-bottom: 20px; }
+        .login-box, .admin-panel { background: #1A1A2E; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #6B4EFF; }
+        input, button, select { padding: 10px; margin: 5px; border-radius: 8px; border: none; }
+        input, select { background: #2D2D44; color: white; }
+        button { background: #6B4EFF; color: white; cursor: pointer; font-weight: bold; }
+        button:hover { background: #8B6EFF; }
+        .filter-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .filter-bar input { width: 250px; }
+        .filter-bar select { width: 150px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333355; }
+        th { background: #6B4EFF; color: white; }
+        .status-pending { color: #FFA500; }
+        .status-approved { color: #00FFAA; }
+        .status-rejected { color: #FF5555; }
+        .approve-btn { background: #00AA55; }
+        .reject-btn { background: #AA3333; }
+        .logout-btn { background: #555; float: right; }
+        .error { color: #FF8888; margin-top: 10px; }
+        .success { color: #88FF88; margin-top: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Winatra AI Admin Dashboard</h1>
+    <div id="auth-section">
+        <div class="login-box">
+            <h3>Login Admin</h3>
+            <input type="email" id="email" placeholder="Email admin" />
+            <input type="password" id="password" placeholder="Password" />
+            <button id="loginBtn">Login</button>
+            <div id="loginMessage" class="error"></div>
+        </div>
+    </div>
+    <div id="admin-panel" style="display:none;">
+        <div class="admin-panel">
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+            <h3>Daftar Pengguna</h3>
+            <div class="filter-bar">
+                <input type="text" id="searchEmail" placeholder="Cari email..." />
+                <select id="filterStatus">
+                    <option value="all">Semua status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+                <button id="applyFilter">Filter</button>
+                <button id="resetFilter">Reset</button>
+            </div>
+            <div id="userList"></div>
+        </div>
+    </div>
+</div>
+<script src="admin.js"></script>
+</body>
+</html>

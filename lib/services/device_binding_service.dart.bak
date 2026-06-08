@@ -1,0 +1,47 @@
+﻿import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class DeviceBindingService {
+  static const MethodChannel _channel = MethodChannel('winatra/service');
+
+  static Future<String?> getAndroidId() async {
+    try {
+      final String androidId = await _channel.invokeMethod('getAndroidId');
+      return androidId;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<bool> bindCurrentDevice(String userId) async {
+    try {
+      final deviceId = await getAndroidId();
+      if (deviceId == null) return false;
+
+      final docRef = FirebaseFirestore.instance.collection('device_bindings').doc(userId);
+      final doc = await docRef.get();
+
+      if (doc.exists) {
+        final existingDeviceId = doc.data()?['deviceId'] as String?;
+        if (existingDeviceId == deviceId) {
+          // Perangkat sama, izinkan login, update lastActive
+          await docRef.update({'lastActive': FieldValue.serverTimestamp()});
+          return true;
+        } else {
+          // Perangkat berbeda, tolak
+          return false;
+        }
+      } else {
+        // Belum ada binding, buat baru
+        await docRef.set({
+          'deviceId': deviceId,
+          'boundAt': FieldValue.serverTimestamp(),
+          'lastActive': FieldValue.serverTimestamp(),
+        });
+        return true;
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+}

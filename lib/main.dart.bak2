@@ -1,0 +1,440 @@
+﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'screens/login_screen.dart';
+
+const platform = MethodChannel('winatra/service');
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  final prefs = await SharedPreferences.getInstance();
+  bool tosAccepted = prefs.getBool('tos_accepted') ?? false;
+  bool isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+  String currentMode = prefs.getString('mode') ?? 'Essay';
+
+  Widget homeWidget;
+
+  if (!tosAccepted) {
+    homeWidget = SplashScreen();
+  } else if (!isLoggedIn) {
+    homeWidget = LoginScreen();
+  } else {
+    try {
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        DocumentSnapshot doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        String status = (doc['status'] ?? 'pending').toString().trim();
+        if (status == 'approved') {
+          try { await platform.invokeMethod('startService'); } catch (e) {}
+          homeWidget = HomeScreen(currentMode: currentMode);
+        } else {
+          homeWidget = LoginScreen();
+        }
+      } else {
+        homeWidget = LoginScreen();
+      }
+    } catch (e) {
+      homeWidget = LoginScreen();
+    }
+  }
+
+  runApp(MyApp(home: homeWidget));
+}
+
+class MyApp extends StatelessWidget {
+  final Widget home;
+  const MyApp({Key? key, required this.home}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6B4EFF)),
+        useMaterial3: true,
+      ),
+      home: home,
+    );
+  }
+}
+
+// ─── SPLASH SCREEN ───────────────────────────────────────────
+
+class SplashScreen extends StatefulWidget {
+  @override
+  _SplashScreenState createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _fadeAnim = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _controller.forward();
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => TosScreen()),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D1A),
+      body: FadeTransition(
+        opacity: _fadeAnim,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset('assets/logo.png', width: 160, height: 160),
+              const SizedBox(height: 24),
+              const Text(
+                'WINATRA',
+                style: TextStyle(
+                  color: Color(0xFF9B7EFF),
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 8,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'AI BETA',
+                style: TextStyle(
+                  color: Color(0xFF6B4EFF),
+                  fontSize: 14,
+                  letterSpacing: 6,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── TERMS OF SERVICE ────────────────────────────────────────
+
+class TosScreen extends StatefulWidget {
+  @override
+  _TosScreenState createState() => _TosScreenState();
+}
+
+class _TosScreenState extends State<TosScreen> {
+  bool _agreed = false;
+
+  Future<void> _accept() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('tos_accepted', true);
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => LoginScreen()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D1A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D0D1A),
+        title: const Text(
+          'Syarat & Ketentuan',
+          style: TextStyle(color: Color(0xFF9B7EFF)),
+        ),
+        elevation: 0,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A2E),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF6B4EFF), width: 1),
+                ),
+                child: const SingleChildScrollView(
+                  child: Text(
+                    '''WINATRA AI — VERSI BETA
+
+Selamat datang di Winatra AI. Sebelum menggunakan aplikasi ini, harap baca dan pahami syarat dan ketentuan berikut.
+
+1. STATUS BETA
+Aplikasi ini masih dalam tahap pengembangan (Beta). Fitur, performa, dan tampilan dapat berubah sewaktu-waktu tanpa pemberitahuan sebelumnya.
+
+2. PENGGUNAAN
+Winatra AI dirancang sebagai alat bantu belajar. Pengguna bertanggung jawab penuh atas penggunaan jawaban yang dihasilkan oleh AI.
+
+3. AKURASI
+Jawaban yang dihasilkan oleh AI tidak selalu 100% akurat. Gunakan sebagai referensi, bukan jawaban mutlak. Selalu verifikasi jawaban penting.
+
+4. PRIVASI
+Teks yang Anda copy dan kirimkan melalui tombol "Jawab" akan dikirim ke server Groq API untuk diproses. Kami tidak menyimpan data pertanyaan Anda.
+
+5. BATASAN
+Winatra AI tidak bertanggung jawab atas kerugian yang timbul akibat penggunaan aplikasi ini, termasuk namun tidak terbatas pada kesalahan jawaban AI.
+
+6. DISTRIBUSI
+Aplikasi ini hanya boleh digunakan oleh pengguna yang telah mendapat izin dari pengembang. Dilarang mendistribusikan ulang tanpa izin.
+
+7. PERUBAHAN
+Syarat dan ketentuan ini dapat berubah sewaktu-waktu. Penggunaan berkelanjutan dianggap sebagai persetujuan terhadap perubahan tersebut.
+
+Dengan menekan "Setuju & Lanjutkan", Anda menyatakan telah membaca, memahami, dan menyetujui seluruh syarat dan ketentuan di atas.
+
+© 2026 Winatra AI — All Rights Reserved''',
+                    style: TextStyle(
+                      color: Color(0xFFCCCCCC),
+                      fontSize: 13,
+                      height: 1.6,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Checkbox(
+                  value: _agreed,
+                  onChanged: (val) => setState(() => _agreed = val ?? false),
+                  activeColor: const Color(0xFF6B4EFF),
+                ),
+                const Expanded(
+                  child: Text(
+                    'Saya telah membaca dan menyetujui syarat & ketentuan',
+                    style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _agreed ? _accept : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6B4EFF),
+                  disabledBackgroundColor: const Color(0xFF333355),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Setuju & Lanjutkan',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Versi Beta 0.1.0',
+              style: TextStyle(color: Color(0xFF666699), fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── HOME SCREEN ─────────────────────────────────────────────
+
+class HomeScreen extends StatefulWidget {
+  final String currentMode;
+  const HomeScreen({Key? key, required this.currentMode}) : super(key: key);
+
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late String mode;
+  bool autoSolve = false;
+
+  @override
+  void initState() {
+    super.initState();
+    mode = widget.currentMode;
+    _loadAutoSolve();
+  }
+
+  Future<void> _loadAutoSolve() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      autoSolve = prefs.getBool('auto_solve') ?? false;
+    });
+  }
+
+  Future<void> _toggleAutoSolve(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_solve', value);
+    setState(() {
+      autoSolve = value;
+    });
+    try {
+      await platform.invokeMethod('setAutoSolve', {'enabled': value});
+    } catch (e) {}
+  }
+
+  Future<void> _toggleMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    String newMode = (mode == 'Essay') ? 'PG' : 'Essay';
+    await prefs.setString('mode', newMode);
+    try { await platform.invokeMethod('startService'); } catch (e) {}
+    setState(() => mode = newMode);
+  }
+
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_logged_in', false);
+    await FirebaseAuth.instance.signOut();
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => LoginScreen()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D1A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D0D1A),
+        title: const Text(
+          'Winatra AI',
+          style: TextStyle(
+            color: Color(0xFF9B7EFF),
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+          ),
+        ),
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Color(0xFF6B4EFF)),
+            onPressed: _logout,
+            tooltip: 'Keluar',
+          ),
+        ],
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset('assets/logo.png', width: 120, height: 120),
+            const SizedBox(height: 16),
+            const Text(
+              'Winatra AI Shortcut',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF6B4EFF)),
+              ),
+              child: Text(
+                'Mode aktif: ',
+                style: const TextStyle(color: Color(0xFF9B7EFF), fontSize: 14),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _toggleMode,
+              icon: const Icon(Icons.swap_horiz, color: Colors.white),
+              label: Text(
+                'Ganti ke ',
+                style: const TextStyle(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6B4EFF),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Auto-solve', style: TextStyle(color: Colors.white)),
+                Switch(
+                  value: autoSolve,
+                  onChanged: _toggleAutoSolve,
+                  activeColor: const Color(0xFF6B4EFF),
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                '1. Copy pertanyaan dari mana saja\n2. Buka notifikasi\n3. Tekan "Jawab" (atau aktifkan Auto-solve)',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF9999BB),
+                  height: 1.8,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Beta v0.1.0',
+              style: TextStyle(color: Color(0xFF444466), fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

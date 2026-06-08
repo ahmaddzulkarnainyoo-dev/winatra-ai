@@ -1,0 +1,174 @@
+﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+const platform = MethodChannel('winatra/service');
+
+class NotificationModeScreen extends StatefulWidget {
+  final String currentMode;
+  const NotificationModeScreen({Key? key, required this.currentMode}) : super(key: key);
+
+  @override
+  _NotificationModeScreenState createState() => _NotificationModeScreenState();
+}
+
+class _NotificationModeScreenState extends State<NotificationModeScreen> {
+  late String mode;
+  bool autoSolve = false;
+  bool notifEnabled = true;
+  int remainingQuota = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    mode = widget.currentMode;
+    _loadAutoSolve();
+    _loadNotifEnabled();
+    _loadRemainingQuota();
+  }
+
+  Future<void> _loadAutoSolve() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      autoSolve = prefs.getBool('auto_solve') ?? false;
+    });
+  }
+
+  Future<void> _loadNotifEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      notifEnabled = prefs.getBool('notif_enabled') ?? true;
+    });
+    if (notifEnabled) {
+      try { await platform.invokeMethod('startService'); } catch (e) {}
+    } else {
+      try { await platform.invokeMethod('stopService'); } catch (e) {}
+    }
+  }
+
+  Future<void> _loadRemainingQuota() async {
+    final prefs = await SharedPreferences.getInstance();
+    final remaining = prefs.getInt('remaining_quota');
+    if (remaining != null) {
+      setState(() {
+        remainingQuota = remaining;
+      });
+    }
+  }
+
+  Future<void> _toggleNotifEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('notif_enabled', value);
+    setState(() {
+      notifEnabled = value;
+    });
+    if (value) {
+      try { await platform.invokeMethod('startService'); } catch (e) {}
+    } else {
+      try { await platform.invokeMethod('stopService'); } catch (e) {}
+      try { await platform.invokeMethod('cancelNotification'); } catch (e) {}
+    }
+  }
+
+  Future<void> _toggleAutoSolve(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_solve', value);
+    setState(() {
+      autoSolve = value;
+    });
+    try {
+      await platform.invokeMethod('setAutoSolve', {'enabled': value});
+    } catch (e) {}
+  }
+
+  Future<void> _toggleMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    String newMode = (mode == 'Essay') ? 'PG' : 'Essay';
+    await prefs.setString('mode', newMode);
+    try { await platform.invokeMethod('syncMode', {'mode': newMode}); } catch (e) {}
+    setState(() => mode = newMode);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D0D1A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0D0D1A),
+        title: const Text('Mode Notifikasi', style: TextStyle(color: Color(0xFF9B7EFF))),
+        elevation: 0,
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset('assets/logo.png', width: 120, height: 120),
+            const SizedBox(height: 16),
+            const Text('Winatra AI Shortcut', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(20), border: Border.all(color: const Color(0xFF6B4EFF))),
+              child: Text('Mode aktif: $mode', style: const TextStyle(color: Color(0xFF9B7EFF), fontSize: 14)),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _toggleMode,
+              icon: const Icon(Icons.swap_horiz, color: Colors.white),
+              label: Text('Ganti ke ${mode == "Essay" ? "PG" : "Essay"}', style: const TextStyle(color: Colors.white)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6B4EFF),
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF6B4EFF)),
+              ),
+              child: remainingQuota == -1
+                  ? const Text('Akses unlimited (Premium)', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 14))
+                  : Text('Sisa kuota hari ini: $remainingQuota dari 15', style: const TextStyle(color: Color(0xFF9B7EFF), fontSize: 14)),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Auto-solve', style: TextStyle(color: Colors.white)),
+                Switch(value: autoSolve, onChanged: _toggleAutoSolve, activeColor: const Color(0xFF6B4EFF)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Aktifkan Notifikasi AI', style: TextStyle(color: Colors.white)),
+                Switch(value: notifEnabled, onChanged: _toggleNotifEnabled, activeColor: const Color(0xFF6B4EFF)),
+              ],
+            ),
+            const SizedBox(height: 40),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 40),
+              child: Column(
+                children: [
+                  Text('📋 Cara Pakai:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF9B7EFF))),
+                  SizedBox(height: 8),
+                  Text('1. Copy pertanyaan (akhiri dengan ? untuk Auto-solve)', style: TextStyle(fontSize: 13, color: Color(0xFFBBBBEE))),
+                  Text('2. Buka notifikasi, tekan tombol "Jawab"', style: TextStyle(fontSize: 13, color: Color(0xFFBBBBEE))),
+                  Text('3. Mode PG: jawaban pop-up + tombol "Kenapa?"', style: TextStyle(fontSize: 13, color: Color(0xFFBBBBEE))),
+                  Text('4. Mode Essay: jawaban auto-copy ke clipboard', style: TextStyle(fontSize: 13, color: Color(0xFFBBBBEE))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text('Beta v0.1.0', style: TextStyle(color: Color(0xFF444466), fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+}

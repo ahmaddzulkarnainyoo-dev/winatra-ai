@@ -1,0 +1,279 @@
+﻿package com.example.winatra_ai
+
+import android.app.*
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.IBinder
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+class WinatraService : Service() {
+
+    companion object {
+        const val CHANNEL_ID = "winatra_channel"
+        const val NOTIF_ID = 1
+        const val ACTION_ANSWER = "ACTION_ANSWER"
+        const val ACTION_CHANGE_MODE = "ACTION_CHANGE_MODE"
+        const val PREFS_NAME = "winatra_prefs"
+        const val KEY_MODE = "mode"
+        const val TAG = "WinatraService"
+        const val GROQ_API_KEY = "BUILD_GROQ_API_KEY"
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val client = OkHttpClient()
+    private var autoSolveEnabled = false
+    private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "onCreate called")
+        createNotificationChannel()
+        setupClipboardListener()
+        showPersistentNotification()
+        Log.d(TAG, "onCreate finished")
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand action=")
+        when (intent?.action) {
+            ACTION_ANSWER -> {
+                Log.d(TAG, "ACTION_ANSWER received")
+                scope.launch { handleAnswer() }
+            }
+            ACTION_CHANGE_MODE -> {
+                Log.d(TAG, "ACTION_CHANGE_MODE received")
+                toggleMode()
+            }
+            "SET_AUTO_SOLVE" -> {
+                val enabled = intent.getBooleanExtra("enabled", false)
+                updateAutoSolve(enabled)
+                showPersistentNotification()
+            }
+            else -> {
+                Log.d(TAG, "No action or unknown action, ensuring notification is shown")
+                showPersistentNotification()
+            }
+        }
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        super.onDestroy()
+        clipboardListener?.let {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.removePrimaryClipChangedListener(it)
+        }
+        scope.cancel()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Winatra AI",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Winatra AI Shortcut"
+                setShowBadge(false)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+            Log.d(TAG, "Notification channel created")
+        }
+    }
+
+    private fun getMode(): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_MODE, "Essay") ?: "Essay"
+    }
+
+    private fun setMode(mode: String) {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_MODE, mode).apply()
+    }
+
+    private fun toggleMode() {
+        val current = getMode()
+        val newMode = if (current == "Essay") "PG" else "Essay"
+        setMode(newMode)
+        Log.d(TAG, "Mode toggled to ")
+        showPersistentNotification()
+    }
+
+    private fun setupClipboardListener() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        autoSolveEnabled = prefs.getBoolean("auto_solve", false)
+        Log.d(TAG, "Auto-solve initial: ")
+
+        clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+            if (autoSolveEnabled) {
+                Log.d(TAG, "Clipboard changed, auto-solving...")
+                scope.launch { handleAnswer() }
+            }
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.addPrimaryClipChangedListener(clipboardListener)
+    }
+
+    private fun updateAutoSolve(enabled: Boolean) {
+        autoSolveEnabled = enabled
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putBoolean("auto_solve", enabled).apply()
+        Log.d(TAG, "Auto-solve set to ")
+    }
+
+    private fun showPersistentNotification() {
+        val mode = getMode()
+        Log.d(TAG, "showPersistentNotification called, mode=")
+
+        val answerIntent = Intent(this, WinatraService::class.java).apply {
+            action = ACTION_ANSWER
+        }
+        val answerPending = PendingIntent.getService(
+            this, 0, answerIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val changeModeIntent = Intent(this, WinatraService::class.java).apply {
+            action = ACTION_CHANGE_MODE
+        }
+        val changeModePending = PendingIntent.getService(
+            this, 1, changeModeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val autoStatus = if (autoSolveEnabled) "ON" else "OFF"
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Winatra AI Shortcut")
+            .setContentText("Mode:  | Auto:  | Copy teks lalu tekan Jawab")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(0, "Ganti Mode", changeModePending)
+            .addAction(0, "Jawab", answerPending)
+            .build()
+
+        try {
+            startForeground(NOTIF_ID, notification)
+            Log.d(TAG, "startForeground succeeded")
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+        }
+    }
+
+    private fun showResultNotification(title: String, body: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setAutoCancel(true)
+            .build()
+        manager.notify(99, notif)
+        Log.d(TAG, "Result notification shown: ")
+    }
+
+    private suspend fun handleAnswer() {
+        val mode = getMode()
+        Log.d(TAG, "handleAnswer called, mode=")
+
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        var question = ""
+        try {
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                question = clip.getItemAt(0).text?.toString()?.trim() ?: ""
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading clipboard", e)
+        }
+
+        if (question.isEmpty()) {
+            showResultNotification("Winatra AI", "Clipboard kosong! Copy pertanyaan dulu.")
+            return
+        }
+
+        Log.d(TAG, "Question: ")
+        showResultNotification("Winatra AI", "Memproses...")
+
+        val answer = withContext(Dispatchers.IO) {
+            callGroq(question, mode)
+        }
+
+        if (mode == "PG") {
+            showResultNotification("Jawaban PG", answer)
+        } else {
+            withContext(Dispatchers.Main) {
+                val clip = android.content.ClipData.newPlainText("answer", answer)
+                clipboard.setPrimaryClip(clip)
+            }
+            showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
+        }
+    }
+
+    private fun callGroq(question: String, mode: String): String {
+        val systemPrompt = if (mode == "PG")
+            "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
+        else
+            "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+
+        val json = JSONObject().apply {
+            put("model", "llama-3.3-70b-versatile")
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", question)
+                })
+            })
+            put("max_tokens", if (mode == "PG") 10 else 500)
+            put("temperature", 0.3)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("https://api.groq.com/openai/v1/chat/completions")
+            .addHeader("Authorization", "Bearer ")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        return try {
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: return "Error: empty response"
+            if (response.isSuccessful) {
+                val result = JSONObject(responseBody)
+                var answer = result
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+                if (mode == "PG") {
+                    answer = answer.replace(Regex("[^A-Da-d]"), "")
+                    if (answer.isEmpty()) return "Tidak dapat menentukan jawaban"
+                    answer = answer[0].uppercaseChar().toString()
+                }
+                answer
+            } else {
+                "Error : "
+            }
+        } catch (e: Exception) {
+            "Error: "
+        }
+    }
+}

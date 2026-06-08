@@ -1,0 +1,26 @@
+@"
+# Flutter
+.dart_tool/
+build/
+.pub/
+*.lock
+*.pid
+
+# Android
+android/local.properties
+android/*.hprof
+*.hprof
+
+# Secrets
+.env
+android/app/google-services.json
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+"@ | Out-File -FilePath .gitignore -Encoding utf8

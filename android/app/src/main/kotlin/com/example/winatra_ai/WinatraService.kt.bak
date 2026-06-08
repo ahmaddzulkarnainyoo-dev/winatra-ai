@@ -1,0 +1,507 @@
+﻿package com.example.winatra_ai
+
+import android.app.*
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.IBinder
+import android.util.Log
+import android.widget.Toast
+import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+class WinatraService : Service() {
+
+    companion object {
+        const val CHANNEL_ID = "winatra_channel"
+        const val RESULT_CHANNEL_ID = "winatra_result_channel"
+        const val NOTIF_ID = 1
+        const val RESULT_NOTIF_ID = 100
+        const val ACTION_ANSWER = "ACTION_ANSWER"
+        const val ACTION_CHANGE_MODE = "ACTION_CHANGE_MODE"
+        const val ACTION_CLIPBOARD_RESULT = "CLIPBOARD_RESULT"
+        const val ACTION_EXPLAIN = "ACTION_EXPLAIN"
+        const val ACTION_COPY_ANSWER = "ACTION_COPY_ANSWER"
+        const val PREFS_NAME = "winatra_prefs"
+        const val KEY_MODE = "mode"
+        const val TAG = "WinatraService"
+        // 6 API keys dari akun Groq berbeda
+        private val GROQ_API_KEYS = arrayOf(
+            "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",
+            "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",
+            "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",
+            "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",
+            "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",
+            "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"
+        )
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val client = OkHttpClient()
+    private var autoSolveEnabled = false
+    private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "onCreate called")
+        createNotificationChannels()
+        setupClipboardListener()
+        showPersistentNotification()
+        Log.d(TAG, "onCreate finished")
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand action=${intent?.action}")
+        when (intent?.action) {
+            ACTION_CHANGE_MODE -> {
+                Log.d(TAG, "ACTION_CHANGE_MODE received")
+                toggleMode()
+            }
+            ACTION_CLIPBOARD_RESULT -> {
+                val question = intent.getStringExtra(ClipboardActivity.EXTRA_QUESTION) ?: ""
+                val modeType = intent.getStringExtra(ClipboardActivity.EXTRA_MODE_TYPE) ?: "answer"
+                Log.d(TAG, "CLIPBOARD_RESULT received, question length=${question.length}, modeType=$modeType")
+                processClipboardResult(question, modeType)
+            }
+            ACTION_EXPLAIN -> {
+                val question = intent.getStringExtra("question") ?: ""
+                val answer = intent.getStringExtra("answer") ?: ""
+                scope.launch { handleExplain(question, answer) }
+            }
+            ACTION_COPY_ANSWER -> {
+                val answer = intent.getStringExtra("answer") ?: ""
+                if (answer.isNotEmpty()) {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("answer", answer)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(this, "Jawaban disalin ke clipboard", Toast.LENGTH_SHORT).show()
+                }
+            }
+            "SET_AUTO_SOLVE" -> {
+                val enabled = intent.getBooleanExtra("enabled", false)
+                updateAutoSolve(enabled)
+                showPersistentNotification()
+            }
+            "SYNC_MODE" -> {
+                val mode = intent.getStringExtra("mode") ?: getMode()
+                setMode(mode)
+                showPersistentNotification()
+                Log.d(TAG, "Mode synced to $mode")
+            }
+            else -> {
+                Log.d(TAG, "No action, ensuring notification shown")
+                showPersistentNotification()
+            }
+        }
+        return START_STICKY
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        super.onDestroy()
+        clipboardListener?.let {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.removePrimaryClipChangedListener(it)
+        }
+        scope.cancel()
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val persistentChannel = NotificationChannel(
+                CHANNEL_ID,
+                "Winatra AI Service",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Winatra AI Shortcut Service"
+                setShowBadge(false)
+            }
+            val resultChannel = NotificationChannel(
+                RESULT_CHANNEL_ID,
+                "Winatra AI Jawaban",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifikasi hasil jawaban AI"
+                setShowBadge(true)
+                enableVibration(true)
+                setSound(null, null)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(persistentChannel)
+            manager.createNotificationChannel(resultChannel)
+            Log.d(TAG, "Notification channels created")
+        }
+    }
+
+    private fun getMode(): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_MODE, "Essay") ?: "Essay"
+    }
+
+    private fun setMode(mode: String) {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_MODE, mode).apply()
+    }
+
+    private fun toggleMode() {
+        val current = getMode()
+        val newMode = if (current == "Essay") "PG" else "Essay"
+        setMode(newMode)
+        Log.d(TAG, "Mode toggled to $newMode")
+        showPersistentNotification()
+    }
+
+    private fun setupClipboardListener() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        autoSolveEnabled = prefs.getBoolean("auto_solve", false)
+        Log.d(TAG, "Auto-solve initial: $autoSolveEnabled")
+
+        clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+            Log.d(TAG, "Clipboard changed detected! Auto-solve enabled: $autoSolveEnabled")
+            if (autoSolveEnabled) {
+                try {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = clipboard.primaryClip
+                    var text = ""
+                    if (clip != null && clip.itemCount > 0) {
+                        text = clip.getItemAt(0).text?.toString()?.trim() ?: ""
+                    }
+                    Log.d(TAG, "Clipboard content: '$text'")
+                    if (text.isNotEmpty() && text.endsWith("?")) {
+                        Log.d(TAG, "Auto-solve triggered for question: ${text.take(50)}...")
+                        val intent = Intent(this@WinatraService, ClipboardActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        }
+                        startActivity(intent)
+                    } else {
+                        Log.d(TAG, "Clipboard changed but no question mark, ignoring")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in clipboard listener: ${e.message}", e)
+                }
+            } else {
+                Log.d(TAG, "Auto-solve disabled, ignoring clipboard change")
+            }
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.addPrimaryClipChangedListener(clipboardListener)
+        Log.d(TAG, "Clipboard listener registered")
+    }
+
+    private fun updateAutoSolve(enabled: Boolean) {
+        autoSolveEnabled = enabled
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putBoolean("auto_solve", enabled).apply()
+        Log.d(TAG, "Auto-solve set to $autoSolveEnabled")
+    }
+
+    private fun showPersistentNotification() {
+        val mode = getMode()
+        val autoStatus = if (autoSolveEnabled) "ON" else "OFF"
+        Log.d(TAG, "showPersistentNotification: mode=$mode, auto=$autoStatus")
+
+        val answerIntent = Intent(this, ClipboardActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val answerPending = PendingIntent.getActivity(
+            this, 0, answerIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val changeModeIntent = Intent(this, WinatraService::class.java).apply {
+            action = ACTION_CHANGE_MODE
+        }
+        val changeModePending = PendingIntent.getService(
+            this, 1, changeModeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val askIntent = Intent(this, ClipboardActivity::class.java).apply {
+            putExtra("mode", "ask")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val askPending = PendingIntent.getActivity(
+            this, 3, askIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val askAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_send, "Tanya", askPending
+        ).build()
+
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Winatra AI Shortcut")
+            .setContentText("Mode: $mode | Auto: $autoStatus | Copy teks lalu tekan Jawab")
+            .setSmallIcon(android.R.drawable.ic_menu_search)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(0, "Ganti Mode", changeModePending)
+            .addAction(0, "Jawab", answerPending)
+            .addAction(askAction)
+            .build()
+
+        try {
+            startForeground(NOTIF_ID, notification)
+            Log.d(TAG, "startForeground succeeded")
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground failed", e)
+        }
+    }
+
+    private fun showResultNotification(title: String, body: String, withExplainButton: Boolean = false, question: String = "", answer: String = "") {
+        val manager = getSystemService(NotificationManager::class.java)
+        val builder = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setAutoCancel(true)
+
+        if (title.contains("PG") && !withExplainButton) {
+            builder.setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
+                .setVibrate(longArrayOf(0, 200, 100, 200))
+        } else {
+            builder.setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        }
+
+        if (withExplainButton && question.isNotEmpty() && answer.isNotEmpty()) {
+            val explainIntent = Intent(this, WinatraService::class.java).apply {
+                action = ACTION_EXPLAIN
+                putExtra("question", question)
+                putExtra("answer", answer)
+            }
+            val explainPending = PendingIntent.getService(this, 2, explainIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.addAction(0, "Kenapa?", explainPending)
+        }
+
+        manager.notify(RESULT_NOTIF_ID, builder.build())
+        Log.d(TAG, "Result notification shown: $title")
+    }
+
+    // ---------- LIMIT FUNCTIONS ----------
+    private fun checkAndShowLimit(): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val remaining = prefs.getInt("remaining_quota", -1)
+        if (remaining == -1) return true
+        if (remaining <= 0) {
+            showResultNotification("Winatra AI", "Maaf, lalu lintas sedang padat. Coba lagi nanti atau upgrade premium.")
+            return false
+        }
+        return true
+    }
+
+    private fun decrementRemainingQuota() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val current = prefs.getInt("remaining_quota", 0)
+        if (current > 0) {
+            prefs.edit().putInt("remaining_quota", current - 1).apply()
+            Log.d(TAG, "Remaining quota decreased to ${current - 1}")
+        }
+    }
+    // ---------- END LIMIT FUNCTIONS ----------
+
+    private fun processClipboardResult(question: String, modeType: String = "answer") {
+        val mode = getMode()
+        Log.d(TAG, "processClipboardResult: question length=${question.length}, mode=$mode, modeType=$modeType")
+
+        if (question.isEmpty()) {
+            Log.w(TAG, "Clipboard is empty!")
+            showResultNotification("Winatra AI", "Clipboard kosong! Copy pertanyaan dulu.")
+            return
+        }
+
+        if (!checkAndShowLimit()) return
+
+        Log.d(TAG, "Question received: $question")
+        showResultNotification("Winatra AI", "Memproses...")
+        scope.launch {
+            val answer = withContext(Dispatchers.IO) { callGroqWithFallback(question, if (modeType == "discussion") "Essay" else mode) }
+            withContext(Dispatchers.Main) {
+                decrementRemainingQuota()
+                if (modeType == "discussion") {
+                    showDiscussionNotification(question, answer)
+                } else {
+                    if (mode == "PG") {
+                        showResultNotification("Jawaban PG", "Jawaban: $answer", true, question, answer)
+                    } else {
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("answer", answer)
+                        clipboard.setPrimaryClip(clip)
+                        showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showDiscussionNotification(question: String, answer: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        val builder = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
+            .setContentTitle("💬 Diskusi AI")
+            .setContentText("Pertanyaan: ${question.take(60)}...\nKlik untuk lihat jawaban")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(answer))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+        val copyIntent = Intent(this, WinatraService::class.java).apply {
+            action = ACTION_COPY_ANSWER
+            putExtra("answer", answer)
+        }
+        val copyPending = PendingIntent.getService(this, 4, copyIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        builder.addAction(0, "Salin", copyPending)
+
+        manager.notify(RESULT_NOTIF_ID + 1, builder.build())
+        Log.d(TAG, "Discussion notification shown")
+    }
+
+    private suspend fun handleExplain(question: String, answer: String) {
+        Log.d(TAG, "handleExplain called")
+        showResultNotification("Winatra AI", "Menyiapkan penjelasan...")
+        val explanation = withContext(Dispatchers.IO) {
+            callExplanationWithFallback(question, answer)
+        }
+        withContext(Dispatchers.Main) {
+            showResultNotification("Penjelasan", explanation)
+        }
+    }
+
+    private fun callGroqWithFallback(question: String, mode: String): String {
+        for (apiKey in GROQ_API_KEYS) {
+            val result = performGroqRequest(apiKey, question, mode)
+            if (result != null && !result.startsWith("Error 429") && !result.startsWith("Error 401") && !result.startsWith("Error 403") && !result.startsWith("Error:")) {
+                return result
+            } else if (result != null && (result.contains("429") || result.contains("401") || result.contains("403"))) {
+                Log.w(TAG, "Groq API key failed with rate limit/auth error: $result, trying next")
+                continue
+            } else if (result != null && result.startsWith("Error")) {
+                Log.w(TAG, "Groq API key other error: $result, trying next")
+                continue
+            }
+        }
+        return "Error: All Groq keys exhausted."
+    }
+
+    private fun performGroqRequest(apiKey: String, question: String, mode: String): String? {
+        val systemPrompt = if (mode == "PG")
+            "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
+        else
+            "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+
+        val json = JSONObject().apply {
+            put("model", "llama-3.3-70b-versatile")
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", question)
+                })
+            })
+            put("max_tokens", if (mode == "PG") 10 else 500)
+            put("temperature", 0.3)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("https://api.groq.com/openai/v1/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        return try {
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string()
+            if (response.isSuccessful && responseBody != null) {
+                val result = JSONObject(responseBody)
+                var answer = result
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+                if (mode == "PG") {
+                    answer = answer.replace(Regex("[^A-Da-d]"), "")
+                    if (answer.isEmpty()) return "?"
+                    answer = answer[0].uppercaseChar().toString()
+                }
+                answer
+            } else {
+                "Error ${response.code}: ${responseBody ?: "no body"}"
+            }
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    private fun callExplanationWithFallback(question: String, answer: String): String {
+        for (apiKey in GROQ_API_KEYS) {
+            val result = performGroqExplanationRequest(apiKey, question, answer)
+            if (result != null && !result.startsWith("Error 429") && !result.startsWith("Error 401") && !result.startsWith("Error 403") && !result.startsWith("Error:")) {
+                return result
+            } else if (result != null && (result.contains("429") || result.contains("401") || result.contains("403"))) {
+                Log.w(TAG, "Groq explanation key failed: $result, trying next")
+                continue
+            }
+        }
+        return "Error: All Groq explanation keys exhausted."
+    }
+
+    private fun performGroqExplanationRequest(apiKey: String, question: String, answer: String): String? {
+        val systemPrompt = "Jelaskan secara singkat dan jelas mengapa jawaban yang benar untuk pertanyaan berikut adalah $answer. Berikan alasan yang logis."
+        val userContent = "Pertanyaan: $question"
+
+        val json = JSONObject().apply {
+            put("model", "llama-3.3-70b-versatile")
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", userContent)
+                })
+            })
+            put("max_tokens", 300)
+            put("temperature", 0.5)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("https://api.groq.com/openai/v1/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        return try {
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string()
+            if (response.isSuccessful && responseBody != null) {
+                val result = JSONObject(responseBody)
+                val explanation = result
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+                explanation
+            } else {
+                "Error ${response.code}: ${responseBody ?: "no body"}"
+            }
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+}

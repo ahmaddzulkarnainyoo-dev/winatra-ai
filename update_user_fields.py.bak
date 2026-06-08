@@ -1,0 +1,43 @@
+import firebase_admin
+from firebase_admin import credentials, firestore
+from datetime import datetime, timezone, timedelta
+
+# Inisialisasi Firebase dengan kredensial
+cred = credentials.Certificate("service-account.json")  # ganti dengan path file JSON-mu
+firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+def update_all_users():
+    users_ref = db.collection('users')
+    users = users_ref.stream()
+    
+    updated_count = 0
+    for user in users:
+        data = user.to_dict()
+        updates = {}
+        
+        # Tambah dailyCount jika belum ada
+        if 'dailyCount' not in data:
+            updates['dailyCount'] = 0
+        
+        # Tambah lastCountDate jika belum ada
+        if 'lastCountDate' not in data:
+            updates['lastCountDate'] = firestore.SERVER_TIMESTAMP
+        
+        # Tambah isPremium jika belum ada
+        if 'isPremium' not in data:
+            updates['isPremium'] = False
+        
+        # Tambah premiumUntil jika belum ada
+        if 'premiumUntil' not in data:
+            updates['premiumUntil'] = None
+        
+        if updates:
+            users_ref.document(user.id).update(updates)
+            updated_count += 1
+            print(f"Updated user {user.id}: {updates}")
+    
+    print(f"\n✅ Selesai. Total {updated_count} user di-update.")
+
+if __name__ == "__main__":
+    update_all_users()
