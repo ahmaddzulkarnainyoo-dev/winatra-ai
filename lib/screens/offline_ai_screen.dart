@@ -49,7 +49,6 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
       
       _ai = OneNm(
         model: OneNmModel.tinyllama,
-        temperature: 0.7,
         onProgress: (status) {
           if (mounted) {
             setState(() => _statusMessage = status);
