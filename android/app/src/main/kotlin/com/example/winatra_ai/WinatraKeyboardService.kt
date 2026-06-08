@@ -4,20 +4,26 @@ import android.app.*
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.inputmethodservice.InputMethodService
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import android.widget.Toast
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.inputmethod.InputConnection
+import android.widget.*
 import androidx.core.app.NotificationCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.*
-import kotlinx.coroutines.tasks.await          // <--- TAMBAHKAN INI
+import kotlinx.coroutines.tasks.await
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.Date                         // <--- TAMBAHKAN INI
+import java.util.Date
 
 class WinatraKeyboardService : InputMethodService() {
 
@@ -30,7 +36,7 @@ class WinatraKeyboardService : InputMethodService() {
     private var isShift = false
     private var isCaps = false
     private var isSymbol = false
-    private var currentTab = 0 // 0: ketik, 1: tanya AI, 2: baca
+    private var currentTab = 0
 
     private var lastAnswer = ""
     private var lastQuestion = ""
@@ -49,7 +55,6 @@ class WinatraKeyboardService : InputMethodService() {
     companion object {
         const val TAG = "WinatraKeyboardService"
         const val PREFS_NAME = "winatra_prefs"
-        // 20 API keys - akan diganti oleh GitHub Actions saat build
         private val GROQ_API_KEYS = arrayOf(
             "BUILD_GROQ_KEY_1",
             "BUILD_GROQ_KEY_2",
@@ -563,13 +568,10 @@ class WinatraKeyboardService : InputMethodService() {
         scope.launch {
             val result = callGroqWithFallback(question, mode)
             withContext(Dispatchers.Main) {
-                // Cek apakah result adalah error
                 if (result.startsWith("Error:")) {
-                    // Gagal total, tampilkan pesan ramah, jangan kurangi kuota
                     val friendlyMsg = getUserFriendlyErrorMessage(result)
                     showStatus(friendlyMsg)
                 } else {
-                    // Sukses, kurangi kuota jika tidak premium dan simpan jawaban
                     if (!isPremium) {
                         decrementRemainingQuota()
                     }
@@ -584,7 +586,6 @@ class WinatraKeyboardService : InputMethodService() {
     private fun callGroqWithFallback(question: String, mode: String): String {
         for (apiKey in GROQ_API_KEYS) {
             val result = performGroqRequest(apiKey, question, mode)
-            // Jika result tidak diawali "Error:", berarti sukses
             if (result != null && !result.startsWith("Error:")) {
                 return result
             } else {
@@ -642,7 +643,6 @@ class WinatraKeyboardService : InputMethodService() {
                 }
                 answer
             } else {
-                // Kembalikan error dengan prefix "Error:" + kode
                 "Error: ${response.code}"
             }
         } catch (e: Exception) {
