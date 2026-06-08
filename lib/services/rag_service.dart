@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -40,7 +42,7 @@ class RAGService {
     }
 
     try {
-      final fileName = filePath.split('/').last;
+      final fileName = filePath.split(Platform.pathSeparator).last;
       print('RAGService: Reading document: $fileName');
       
       final file = File(filePath);
@@ -49,9 +51,13 @@ class RAGService {
         return false;
       }
 
-      // Baca isi file
-      final content = await file.readAsString();
-      
+      // Baca isi file sesuai tipe
+      final content = await extractTextFromFile(filePath);
+      if (content.isEmpty) {
+        print('RAGService: Extracted content is empty for $fileName');
+        return false;
+      }
+
       // Simpan ke memory
       _documents.add({
         'id': DateTime.now().millisecondsSinceEpoch.toString(),
@@ -67,6 +73,69 @@ class RAGService {
       print('RAGService: Error uploading document: $e');
       return false;
     }
+  }
+
+  static Future<String> extractTextFromFile(String filePath) async {
+    final extension = filePath.split('.').last.toLowerCase();
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception('File not found: $filePath');
+    }
+
+    if (extension == 'txt' || extension == 'md') {
+      return await file.readAsString();
+    }
+
+    if (extension == 'docx') {
+      return await _extractTextFromDocx(file);
+    }
+
+    if (extension == 'pdf') {
+      return await _extractTextFromPdf(file);
+    }
+
+    if (extension == 'doc') {
+      return await file.readAsString();
+    }
+
+    throw Exception('Unsupported file type: $extension');
+  }
+
+  static Future<String> _extractTextFromDocx(File file) async {
+    final bytes = await file.readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final documentEntry = archive.files.firstWhere(
+      (entry) => entry.name.toLowerCase() == 'word/document.xml',
+      orElse: () => throw Exception('Invalid DOCX file: document.xml not found'),
+    );
+    final xmlContent = utf8.decode(documentEntry.content as List<int>);
+    final textMatches = RegExp(r'<w:t[^>]*>(.*?)<\/w:t>', dotAll: true)
+        .allMatches(xmlContent)
+        .map((match) => match.group(1) ?? '')
+        .toList();
+    return textMatches.join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static Future<String> _extractTextFromPdf(File file) async {
+    final bytes = await file.readAsBytes();
+    final raw = latin1.decode(bytes, allowInvalid: true);
+    if (!raw.contains('%PDF')) {
+      throw Exception('Invalid PDF file');
+    }
+
+    final matches = RegExp(r'\(([^)]*)\)').allMatches(raw);
+    final buffer = StringBuffer();
+    for (final match in matches) {
+      buffer.write(match.group(1));
+      buffer.write(' ');
+    }
+
+    final extracted = buffer.toString()
+        .replaceAll(RegExp(r'\\[nrtbf]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    return extracted;
   }
 
   /// Cari konteks relevan dari dokumen (simple string search)

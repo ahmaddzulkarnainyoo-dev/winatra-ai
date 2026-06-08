@@ -49,6 +49,7 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
       
       _ai = OneNm(
         model: OneNmModel.tinyllama,
+        temperature: 0.7,
         onProgress: (status) {
           if (mounted) {
             setState(() => _statusMessage = status);
@@ -69,35 +70,22 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
   }
 
   String _buildPrompt(String question, String context) {
+    final instruction = 'JAWAB DALAM BAHASA INDONESIA. LANGSUNG JAWAB PERTANYAAN, JELASKAN MINIMAL 3 KALIMAT. JANGAN ULANG PERINTAH.';
     if (context.isNotEmpty) {
-      return '''
-Anda adalah asisten AI yang ramah, cerdas, dan suka membantu. Jawab pertanyaan berikut dengan BAHASA INDONESIA yang baik dan benar.
+      return '''$instruction
 
-Gunakan informasi dari TEKS yang disediakan sebagai sumber utama jawaban Anda. Jika teks tidak mengandung jawaban, katakan "Berdasarkan materi yang diupload, informasi tentang pertanyaan ini tidak tersedia." Jangan mengarang jawaban.
-
-**Aturan penting:**
-- JANGAN menjawab dengan satu kata. Berikan penjelasan minimal 3 kalimat.
-- JANGAN menggunakan bahasa Inggris kecuali untuk istilah teknis yang tidak ada padanannya (itupun beri penjelasan).
-- Jawab dengan jelas, terstruktur, dan mudah dipahami oleh pelajar.
-
-TEKS YANG DIUPLOAD:
+Konteks:
 $context
 
-PERTANYAAN: $question
+Pertanyaan: $question
 
-JAWABAN (dalam Bahasa Indonesia, minimal 3 kalimat):''';
+Jawaban:''';
     } else {
-      return '''
-Anda adalah asisten AI yang ramah, cerdas, dan suka membantu. Jawab pertanyaan berikut dengan BAHASA INDONESIA yang baik dan benar.
+      return '''$instruction
 
-**Aturan penting:**
-- JANGAN menjawab dengan satu kata. Berikan penjelasan minimal 3 kalimat.
-- JANGAN menggunakan bahasa Inggris kecuali untuk istilah teknis.
-- Jika tidak tahu, katakan "Maaf, saya belum bisa menjawab pertanyaan itu dengan yakin. Silakan tanyakan hal lain atau upload materi terkait."
+Pertanyaan: $question
 
-PERTANYAAN: $question
-
-JAWABAN (dalam Bahasa Indonesia, minimal 3 kalimat):''';
+Jawaban:''';
     }
   }
 

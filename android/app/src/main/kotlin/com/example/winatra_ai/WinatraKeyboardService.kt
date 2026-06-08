@@ -187,20 +187,37 @@ class WinatraKeyboardService : InputMethodService() {
                 aiInputBar.visibility = View.VISIBLE
                 keyboardPanel.visibility = View.VISIBLE
                 readPanel.visibility = View.GONE
+                scope.launch {
+                    val isPremium = isUserPremium()
+                    withContext(Dispatchers.Main) {
+                        if (isPremium) {
+                            aiStatus.text = "Akses premium: tanpa batas"
+                            aiStatus.visibility = View.VISIBLE
+                        } else if (aiStatus.text.isEmpty() || aiStatus.text.startsWith("Akses premium:")) {
+                            aiStatus.visibility = View.GONE
+                        }
+                    }
+                }
             }
             2 -> {
                 aiInputBar.visibility = View.GONE
                 keyboardPanel.visibility = View.GONE
                 readPanel.visibility = View.VISIBLE
-                if (lastAnswer.isNotEmpty()) {
-                    readAnswer.text = lastAnswer
-                    readScrollView.visibility = View.VISIBLE
-                    readStatus.text = "Pertanyaan: $lastQuestion"
-                    readStatus.visibility = View.VISIBLE
-                } else {
-                    readStatus.text = "Belum ada jawaban. Tanya dulu di tab ✨"
-                    readStatus.visibility = View.VISIBLE
-                    readScrollView.visibility = View.GONE
+                scope.launch {
+                    val isPremium = isUserPremium()
+                    withContext(Dispatchers.Main) {
+                        if (lastAnswer.isNotEmpty()) {
+                            val premiumHeader = if (isPremium) "✨ Akun Premium - Unlimited ✨\n\n" else ""
+                            readAnswer.text = premiumHeader + lastAnswer
+                            readScrollView.visibility = View.VISIBLE
+                            readStatus.text = "Pertanyaan: $lastQuestion"
+                            readStatus.visibility = View.VISIBLE
+                        } else {
+                            readStatus.text = "Belum ada jawaban. Tanya dulu di tab ✨"
+                            readStatus.visibility = View.VISIBLE
+                            readScrollView.visibility = View.GONE
+                        }
+                    }
                 }
             }
         }

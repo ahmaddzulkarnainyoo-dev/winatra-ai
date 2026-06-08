@@ -124,6 +124,10 @@ class WinatraService : Service() {
                 showPersistentNotification()
                 Log.d(TAG, "Mode synced to $mode")
             }
+            ACTION_REFRESH_PREMIUM_STATUS -> {
+                Log.d(TAG, "ACTION_REFRESH_PREMIUM_STATUS received")
+                showPersistentNotification()
+            }
             else -> {
                 Log.d(TAG, "No action, ensuring notification shown")
                 showPersistentNotification()
@@ -237,13 +241,66 @@ class WinatraService : Service() {
         val autoStatus = if (autoSolveEnabled) "ON" else "OFF"
         Log.d(TAG, "showPersistentNotification: mode=$mode, auto=$autoStatus")
 
-        val answerIntent = Intent(this, ClipboardActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        scope.launch {
+            val isPremium = isUserPremium()
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            val remaining = prefs.getInt("remaining_quota", DEFAULT_DAILY_QUOTA)
+            val statusText = if (isPremium) {
+                "Mode: $mode | ⭐ Premium aktif | Tanpa batas"
+            } else {
+                "Mode: $mode | Sisa kuota: $remaining | Copy teks lalu tekan Jawab"
+            }
+
+            withContext(Dispatchers.Main) {
+                val answerIntent = Intent(this@WinatraService, ClipboardActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                val answerPending = PendingIntent.getActivity(
+                    this@WinatraService, 0, answerIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val changeModeIntent = Intent(this@WinatraService, WinatraService::class.java).apply {
+                    action = ACTION_CHANGE_MODE
+                }
+                val changeModePending = PendingIntent.getService(
+                    this@WinatraService, 1, changeModeIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val askIntent = Intent(this@WinatraService, ClipboardActivity::class.java).apply {
+                    putExtra("mode", "ask")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                }
+                val askPending = PendingIntent.getActivity(
+                    this@WinatraService, 3, askIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val askAction = NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_send, "Tanya", askPending
+                ).build()
+
+                val notification = NotificationCompat.Builder(this@WinatraService, CHANNEL_ID)
+                    .setContentTitle("Winatra AI Shortcut")
+                    .setContentText(statusText)
+                    .setSmallIcon(android.R.drawable.ic_menu_search)
+                    .setOngoing(true)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .addAction(0, "Ganti Mode", changeModePending)
+                    .addAction(0, "Jawab", answerPending)
+                    .addAction(askAction)
+                    .build()
+
+                try {
+                    startForeground(NOTIF_ID, notification)
+                    Log.d(TAG, "startForeground succeeded")
+                } catch (e: Exception) {
+                    Log.e(TAG, "startForeground failed", e)
+                }
+            }
         }
-        val answerPending = PendingIntent.getActivity(
-            this, 0, answerIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+    }
 
         val changeModeIntent = Intent(this, WinatraService::class.java).apply {
             action = ACTION_CHANGE_MODE
@@ -345,6 +402,7 @@ class WinatraService : Service() {
         Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
 
         syncRemainingQuotaToFirestore(DEFAULT_DAILY_QUOTA)
+        showPersistentNotification()
     }
 
     private suspend fun syncRemainingQuotaToFirestore(quota: Int) {
@@ -374,6 +432,7 @@ class WinatraService : Service() {
                 val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 prefs.edit().putInt("remaining_quota", remoteQuota).apply()
                 Log.d(TAG, "Synced quota from Firestore: $remoteQuota")
+                showPersistentNotification()
             }
         } catch (e: Exception) {
             Log.e(TAG, "syncQuotaFromFirestore: ${e.message}")
@@ -388,6 +447,7 @@ class WinatraService : Service() {
             prefs.edit().putInt("remaining_quota", newVal).apply()
             Log.d(TAG, "decrementRemainingQuota: $current -> $newVal")
             scope.launch { syncRemainingQuotaToFirestore(newVal) }
+            showPersistentNotification()
         }
     }
 
