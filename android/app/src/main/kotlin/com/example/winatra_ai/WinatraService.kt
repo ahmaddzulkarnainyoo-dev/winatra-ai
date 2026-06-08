@@ -35,17 +35,40 @@ class WinatraService : Service() {
         const val ACTION_COPY_ANSWER = "ACTION_COPY_ANSWER"
         const val PREFS_NAME = "winatra_prefs"
         const val KEY_MODE = "mode"
+        const val PREF_KEY_API_INDEX = "api_key_index"
         const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
         const val DEFAULT_DAILY_QUOTA = 15
         const val TAG = "WinatraService"
-        // 6 API keys dari akun Groq berbeda
-        private val GROQ_API_KEYS = arrayOf(
-            "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",
-            "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",
-            "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",
-            "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",
-            "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",
-            "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"
+
+        data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
+
+        private val API_ENDPOINTS = listOf(
+            ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_2", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_3", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_4", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_5", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_6", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_7", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_8", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_9", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_10", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_11", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_12", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_13", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_14", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_15", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_16", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_17", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_18", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_19", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_20", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_21", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_22", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_23", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_25", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek")
         )
     }
 
@@ -293,13 +316,17 @@ class WinatraService : Service() {
         Log.d(TAG, "Result notification shown: $title")
     }
 
-    // ---------- LIMIT FUNCTIONS ----------
+    // ========== LIMIT & PREMIUM FUNCTIONS ==========
     private fun checkAndShowLimit(): Boolean {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val remaining = prefs.getInt("remaining_quota", -1)
+        Log.d(TAG, "checkAndShowLimit: remaining = $remaining")
         if (remaining == -1) return true
         if (remaining <= 0) {
-            showResultNotification("Winatra AI", "Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]. Admin akan mengaktifkan premium setelah konfirmasi.")
+            showResultNotification(
+                "Winatra AI",
+                "Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]. Admin akan mengaktifkan premium setelah konfirmasi."
+            )
             return false
         }
         return true
@@ -315,8 +342,8 @@ class WinatraService : Service() {
             .putString(PREF_KEY_LAST_QUOTA_RESET, today)
             .putInt("remaining_quota", DEFAULT_DAILY_QUOTA)
             .apply()
-
         Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
+
         syncRemainingQuotaToFirestore(DEFAULT_DAILY_QUOTA)
     }
 
@@ -338,32 +365,67 @@ class WinatraService : Service() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = prefs.getInt("remaining_quota", 0)
         if (current > 0) {
-            prefs.edit().putInt("remaining_quota", current - 1).apply()
-            Log.d(TAG, "Remaining quota decreased to ${current - 1}")
+            val newVal = current - 1
+            prefs.edit().putInt("remaining_quota", newVal).apply()
+            Log.d(TAG, "decrementRemainingQuota: $current -> $newVal")
+            scope.launch { syncRemainingQuotaToFirestore(newVal) }
         }
     }
-    // ---------- END LIMIT FUNCTIONS ----------
+
+    private suspend fun isUserPremium(): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val user = FirebaseAuth.getInstance().currentUser
+                if (user == null) return@withContext false
+                val doc = FirebaseFirestore.getInstance().collection("users").document(user.uid).get().await()
+                if (!doc.exists()) return@withContext false
+                val isPremiumFlag = doc.getBoolean("isPremium") ?: false
+                if (!isPremiumFlag) return@withContext false
+                val premiumExpiry = doc.getTimestamp("premiumExpiry")?.toDate()
+                if (premiumExpiry == null) return@withContext true
+                return@withContext premiumExpiry.after(Date())
+            } catch (e: Exception) {
+                Log.e(TAG, "isUserPremium error: ${e.message}")
+                return@withContext false
+            }
+        }
+    }
+    // ========== END LIMIT & PREMIUM ==========
 
     private fun processClipboardResult(question: String, modeType: String = "answer") {
         val mode = getMode()
         Log.d(TAG, "processClipboardResult: question length=${question.length}, mode=$mode, modeType=$modeType")
 
+        if (question.isEmpty()) {
+            Log.w(TAG, "Clipboard is empty!")
+            showResultNotification("Winatra AI", "Clipboard kosong! Salin pertanyaan terlebih dahulu.")
+            return
+        }
+
+        showResultNotification("Winatra AI", "⏳ Memproses pertanyaan...")
+
         scope.launch {
             resetDailyQuotaIfNeeded()
-
-            if (question.isEmpty()) {
-                Log.w(TAG, "Clipboard is empty!")
-                showResultNotification("Winatra AI", "Clipboard kosong! Copy pertanyaan dulu.")
-                return@launch
+            val isPremium = isUserPremium()
+            if (!isPremium) {
+                if (!checkAndShowLimit()) return@launch
+            } else {
+                Log.d(TAG, "User is premium, skipping limit check")
             }
 
-            if (!checkAndShowLimit()) return@launch
+            val answer = withContext(Dispatchers.IO) {
+                callAIWithFallback(question, if (modeType == "discussion") "Essay" else mode)
+            }
 
-            Log.d(TAG, "Question received: $question")
-            showResultNotification("Winatra AI", "Memproses...")
-            val answer = withContext(Dispatchers.IO) { callGroqWithFallback(question, if (modeType == "discussion") "Essay" else mode) }
             withContext(Dispatchers.Main) {
-                decrementRemainingQuota()
+                if (answer.startsWith("Error:")) {
+                    val friendlyMsg = getUserFriendlyErrorMessage(answer)
+                    showResultNotification("Winatra AI", friendlyMsg)
+                    return@withContext
+                }
+
+                if (!isPremium) decrementRemainingQuota()
+
                 if (modeType == "discussion") {
                     showDiscussionNotification(question, answer)
                 } else {
@@ -377,6 +439,17 @@ class WinatraService : Service() {
                     }
                 }
             }
+        }
+    }
+
+    private fun getUserFriendlyErrorMessage(rawError: String): String {
+        return when {
+            rawError.contains("All API keys failed") -> "Layanan AI sedang sangat sibuk. Coba lagi nanti. Jika masalah berlanjut, hubungi admin untuk informasi paket premium."
+            rawError.contains("429") -> "Trafik padat, coba lagi sebentar."
+            rawError.contains("401") || rawError.contains("403") -> "Ada masalah teknis. Tim kami sedang memperbaiki."
+            rawError.contains("timeout") -> "Koneksi lambat, coba lagi dengan sinyal lebih baik."
+            rawError.contains("network") -> "Tidak ada koneksi internet. Periksa jaringan Anda."
+            else -> "Maaf, terjadi gangguan. Silakan coba beberapa saat lagi."
         }
     }
 
@@ -403,39 +476,58 @@ class WinatraService : Service() {
 
     private suspend fun handleExplain(question: String, answer: String) {
         Log.d(TAG, "handleExplain called")
-        showResultNotification("Winatra AI", "Menyiapkan penjelasan...")
+        showResultNotification("Winatra AI", "📖 Menyiapkan penjelasan...")
         val explanation = withContext(Dispatchers.IO) {
             callExplanationWithFallback(question, answer)
         }
         withContext(Dispatchers.Main) {
-            showResultNotification("Penjelasan", explanation)
-        }
-    }
-
-    private fun callGroqWithFallback(question: String, mode: String): String {
-        for (apiKey in GROQ_API_KEYS) {
-            val result = performGroqRequest(apiKey, question, mode)
-            if (result != null && !result.startsWith("Error 429") && !result.startsWith("Error 401") && !result.startsWith("Error 403") && !result.startsWith("Error:")) {
-                return result
-            } else if (result != null && (result.contains("429") || result.contains("401") || result.contains("403"))) {
-                Log.w(TAG, "Groq API key failed with rate limit/auth error: $result, trying next")
-                continue
-            } else if (result != null && result.startsWith("Error")) {
-                Log.w(TAG, "Groq API key other error: $result, trying next")
-                continue
+            if (explanation.startsWith("Error:")) {
+                val friendlyMsg = getUserFriendlyErrorMessage(explanation)
+                showResultNotification("Penjelasan", friendlyMsg)
+            } else {
+                showResultNotification("Penjelasan", explanation)
             }
         }
-        return "Error: All Groq keys exhausted."
     }
 
-    private fun performGroqRequest(apiKey: String, question: String, mode: String): String? {
+    // ========== API CALL WITH FALLBACK (Groq + DeepSeek) ==========
+    private fun getStoredApiIndex(): Int {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(PREF_KEY_API_INDEX, 0).coerceAtLeast(0) % API_ENDPOINTS.size
+    }
+
+    private fun saveApiIndex(index: Int) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
+    }
+
+    private suspend fun callAIWithFallback(question: String, mode: String): String {
+        val startIndex = getStoredApiIndex()
+        for (i in API_ENDPOINTS.indices) {
+            val idx = (startIndex + i) % API_ENDPOINTS.size
+            val endpoint = API_ENDPOINTS[idx]
+            val result = performApiRequest(endpoint, question, mode)
+            if (result != null && !result.startsWith("Error:")) {
+                saveApiIndex((idx + 1) % API_ENDPOINTS.size)
+                return result
+            } else {
+                Log.w(TAG, "API endpoint failed: ${endpoint.type} ${endpoint.key.take(12)}... error=$result")
+            }
+        }
+        saveApiIndex((startIndex + 1) % API_ENDPOINTS.size)
+        return "Error: All API keys failed."
+    }
+
+    private suspend fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
         val systemPrompt = if (mode == "PG")
             "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
         else
             "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
 
+        val model = if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile"
+
         val json = JSONObject().apply {
-            put("model", "llama-3.3-70b-versatile")
+            put("model", model)
             put("messages", org.json.JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
@@ -452,8 +544,8 @@ class WinatraService : Service() {
 
         val body = json.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
-            .url("https://api.groq.com/openai/v1/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
+            .url("${endpoint.baseUrl}/chat/completions")
+            .addHeader("Authorization", "Bearer ${endpoint.key}")
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()
@@ -476,32 +568,33 @@ class WinatraService : Service() {
                 }
                 answer
             } else {
-                "Error ${response.code}: ${responseBody ?: "no body"}"
+                "Error: ${response.code}"
             }
         } catch (e: Exception) {
             "Error: ${e.message}"
         }
     }
 
-    private fun callExplanationWithFallback(question: String, answer: String): String {
-        for (apiKey in GROQ_API_KEYS) {
-            val result = performGroqExplanationRequest(apiKey, question, answer)
-            if (result != null && !result.startsWith("Error 429") && !result.startsWith("Error 401") && !result.startsWith("Error 403") && !result.startsWith("Error:")) {
+    private suspend fun callExplanationWithFallback(question: String, answer: String): String {
+        val startIndex = getStoredApiIndex()
+        for (i in API_ENDPOINTS.indices) {
+            val idx = (startIndex + i) % API_ENDPOINTS.size
+            val endpoint = API_ENDPOINTS[idx]
+            val result = performExplanationRequest(endpoint, question, answer)
+            if (result != null && !result.startsWith("Error:")) {
+                saveApiIndex((idx + 1) % API_ENDPOINTS.size)
                 return result
-            } else if (result != null && (result.contains("429") || result.contains("401") || result.contains("403"))) {
-                Log.w(TAG, "Groq explanation key failed: $result, trying next")
-                continue
             }
         }
-        return "Error: All Groq explanation keys exhausted."
+        return "Error: All API keys failed for explanation."
     }
 
-    private fun performGroqExplanationRequest(apiKey: String, question: String, answer: String): String? {
-        val systemPrompt = "Jelaskan secara singkat dan jelas mengapa jawaban yang benar untuk pertanyaan berikut adalah $answer. Berikan alasan yang logis."
+    private suspend fun performExplanationRequest(endpoint: ApiEndpoint, question: String, answer: String): String? {
+        val systemPrompt = "Jelaskan secara singkat dan jelas mengapa jawaban yang benar untuk pertanyaan berikut adalah $answer. Berikan alasan yang logis dalam Bahasa Indonesia."
         val userContent = "Pertanyaan: $question"
 
         val json = JSONObject().apply {
-            put("model", "llama-3.3-70b-versatile")
+            put("model", if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile")
             put("messages", org.json.JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
@@ -518,8 +611,8 @@ class WinatraService : Service() {
 
         val body = json.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
-            .url("https://api.groq.com/openai/v1/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
+            .url("${endpoint.baseUrl}/chat/completions")
+            .addHeader("Authorization", "Bearer ${endpoint.key}")
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()
@@ -529,15 +622,14 @@ class WinatraService : Service() {
             val responseBody = response.body?.string()
             if (response.isSuccessful && responseBody != null) {
                 val result = JSONObject(responseBody)
-                val explanation = result
+                result
                     .getJSONArray("choices")
                     .getJSONObject(0)
                     .getJSONObject("message")
                     .getString("content")
                     .trim()
-                explanation
             } else {
-                "Error ${response.code}: ${responseBody ?: "no body"}"
+                "Error: ${response.code}"
             }
         } catch (e: Exception) {
             "Error: ${e.message}"
