@@ -501,15 +501,23 @@ class WinatraKeyboardService : InputMethodService() {
         }
         lastQuestion = question
         scope.launch {
-            resetDailyQuotaIfNeeded()
-            // CEK PREMIUM DAN LIMIT
-            val isPremium = isUserPremium()
-            if (!isPremium) {
-                if (!checkAndShowLimit()) return@launch
-            } else {
-                Log.d(TAG, "User is premium, skipping limit check")
+            try {
+                resetDailyQuotaIfNeeded()
+                syncQuotaFromFirestore()
+                // CEK PREMIUM DAN LIMIT
+                val isPremium = isUserPremium()
+                if (!isPremium) {
+                    if (!checkAndShowLimit()) return@launch
+                } else {
+                    Log.d(TAG, "User is premium, skipping limit check")
+                }
+                sendToAi(question, isPremium)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in handleAIQuery: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    showStatus("Terjadi error: ${e.message}")
+                }
             }
-            sendToAi(question, isPremium)
         }
     }
 
@@ -529,8 +537,22 @@ class WinatraKeyboardService : InputMethodService() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = prefs.getInt("remaining_quota", 0)
         if (current > 0) {
-            prefs.edit().putInt("remaining_quota", current - 1).apply()
-            Log.d(TAG, "decrementRemainingQuota: $current -> ${current - 1}")
+            val newVal = current - 1
+            prefs.edit().putInt("remaining_quota", newVal).apply()
+            Log.d(TAG, "decrementRemainingQuota: $current -> $newVal")
+            scope.launch {
+                try {
+                    val user = FirebaseAuth.getInstance().currentUser ?: return@launch
+                    FirebaseFirestore.getInstance()
+                        .collection("users")
+                        .document(user.uid)
+                        .update("remainingQuota", newVal)
+                        .await()
+                    Log.d(TAG, "Synced remainingQuota to Firestore: $newVal")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error syncing quota decrement: ${e.message}")
+                }
+            }
         }
     }
 
@@ -558,6 +580,25 @@ class WinatraKeyboardService : InputMethodService() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "syncRemainingQuotaToFirestore: ${e.message}")
+        }
+    }
+
+    private suspend fun syncQuotaFromFirestore() {
+        try {
+            val user = FirebaseAuth.getInstance().currentUser ?: return
+            val doc = FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(user.uid)
+                .get()
+                .await()
+            if (doc.exists()) {
+                val remoteQuota = doc.getLong("remainingQuota")?.toInt() ?: DEFAULT_DAILY_QUOTA
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.edit().putInt("remaining_quota", remoteQuota).apply()
+                Log.d(TAG, "Synced quota from Firestore: $remoteQuota")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "syncQuotaFromFirestore: ${e.message}")
         }
     }
 
@@ -607,22 +648,34 @@ class WinatraKeyboardService : InputMethodService() {
     }
 
     private fun sendToAi(question: String, isPremium: Boolean = false) {
+        if (!::aiInput.isInitialized || !::aiStatus.isInitialized) {
+            Log.e(TAG, "sendToAi called before view initialization")
+            return
+        }
+        
         showStatus("⏳ Memproses...")
         val mode = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString("keyboard_mode", "Essay") ?: "Essay"
         scope.launch {
-            val result = callAIWithFallback(question, mode)
-            withContext(Dispatchers.Main) {
-                if (result.startsWith("Error:")) {
-                    val friendlyMsg = getUserFriendlyErrorMessage(result, "AI")
-                    showStatus(friendlyMsg)
-                } else {
-                    if (!isPremium) {
-                        decrementRemainingQuota()
+            try {
+                val result = callAIWithFallback(question, mode)
+                withContext(Dispatchers.Main) {
+                    if (result.startsWith("Error:")) {
+                        val friendlyMsg = getUserFriendlyErrorMessage(result, "AI")
+                        showStatus(friendlyMsg)
+                    } else {
+                        if (!isPremium) {
+                            decrementRemainingQuota()
+                        }
+                        lastAnswer = result
+                        aiStatus.visibility = View.GONE
+                        switchTab(2)
                     }
-                    lastAnswer = result
-                    aiStatus.visibility = View.GONE
-                    switchTab(2)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in sendToAi: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    showStatus("Terjadi error: ${e.message}")
                 }
             }
         }
@@ -688,8 +741,8 @@ class WinatraKeyboardService : InputMethodService() {
 
         return try {
             val response = client.newCall(request).execute()
-            val responseBody = response.body?.string()
-            if (response.isSuccessful && responseBody != null) {
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful && responseBody.isNotEmpty()) {
                 val result = JSONObject(responseBody)
                 var answer = result
                     .getJSONArray("choices")
@@ -704,7 +757,7 @@ class WinatraKeyboardService : InputMethodService() {
                 }
                 answer
             } else {
-                val errorDetails = responseBody ?: ""
+                val errorDetails = responseBody.take(100)
                 "Error: ${response.code} ${errorDetails}"
             }
         } catch (e: Exception) {

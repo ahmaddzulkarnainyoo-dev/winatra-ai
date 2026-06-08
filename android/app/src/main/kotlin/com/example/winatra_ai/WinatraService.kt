@@ -361,6 +361,25 @@ class WinatraService : Service() {
         }
     }
 
+    private suspend fun syncQuotaFromFirestore() {
+        try {
+            val user = FirebaseAuth.getInstance().currentUser ?: return
+            val doc = FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(user.uid)
+                .get()
+                .await()
+            if (doc.exists()) {
+                val remoteQuota = doc.getLong("remainingQuota")?.toInt() ?: DEFAULT_DAILY_QUOTA
+                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                prefs.edit().putInt("remaining_quota", remoteQuota).apply()
+                Log.d(TAG, "Synced quota from Firestore: $remoteQuota")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "syncQuotaFromFirestore: ${e.message}")
+        }
+    }
+
     private fun decrementRemainingQuota() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = prefs.getInt("remaining_quota", 0)
@@ -405,15 +424,17 @@ class WinatraService : Service() {
         showResultNotification("Winatra AI", "⏳ Memproses pertanyaan...")
 
         scope.launch {
-            resetDailyQuotaIfNeeded()
-            val isPremium = isUserPremium()
-            if (!isPremium) {
-                if (!checkAndShowLimit()) return@launch
-            } else {
-                Log.d(TAG, "User is premium, skipping limit check")
-            }
+            try {
+                resetDailyQuotaIfNeeded()
+                syncQuotaFromFirestore()
+                val isPremium = isUserPremium()
+                if (!isPremium) {
+                    if (!checkAndShowLimit()) return@launch
+                } else {
+                    Log.d(TAG, "User is premium, skipping limit check")
+                }
 
-            val answer = withContext(Dispatchers.IO) {
+                val answer = withContext(Dispatchers.IO) {
                 callAIWithFallback(question, if (modeType == "discussion") "Essay" else mode)
             }
 
@@ -437,6 +458,11 @@ class WinatraService : Service() {
                         clipboard.setPrimaryClip(clip)
                         showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
                     }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in processClipboardResult: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    showResultNotification("Winatra AI", "Terjadi error: ${e.message}")
                 }
             }
         }
