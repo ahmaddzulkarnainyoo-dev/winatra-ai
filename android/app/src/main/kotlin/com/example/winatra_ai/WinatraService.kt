@@ -124,10 +124,6 @@ class WinatraService : Service() {
                 showPersistentNotification()
                 Log.d(TAG, "Mode synced to $mode")
             }
-            ACTION_REFRESH_PREMIUM_STATUS -> {
-                Log.d(TAG, "ACTION_REFRESH_PREMIUM_STATUS received")
-                showPersistentNotification()
-            }
             else -> {
                 Log.d(TAG, "No action, ensuring notification shown")
                 showPersistentNotification()
@@ -241,66 +237,13 @@ class WinatraService : Service() {
         val autoStatus = if (autoSolveEnabled) "ON" else "OFF"
         Log.d(TAG, "showPersistentNotification: mode=$mode, auto=$autoStatus")
 
-        scope.launch {
-            val isPremium = isUserPremium()
-            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            val remaining = prefs.getInt("remaining_quota", DEFAULT_DAILY_QUOTA)
-            val statusText = if (isPremium) {
-                "Mode: $mode | ⭐ Premium aktif | Tanpa batas"
-            } else {
-                "Mode: $mode | Sisa kuota: $remaining | Copy teks lalu tekan Jawab"
-            }
-
-            withContext(Dispatchers.Main) {
-                val answerIntent = Intent(this@WinatraService, ClipboardActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                val answerPending = PendingIntent.getActivity(
-                    this@WinatraService, 0, answerIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-
-                val changeModeIntent = Intent(this@WinatraService, WinatraService::class.java).apply {
-                    action = ACTION_CHANGE_MODE
-                }
-                val changeModePending = PendingIntent.getService(
-                    this@WinatraService, 1, changeModeIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-
-                val askIntent = Intent(this@WinatraService, ClipboardActivity::class.java).apply {
-                    putExtra("mode", "ask")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                }
-                val askPending = PendingIntent.getActivity(
-                    this@WinatraService, 3, askIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-
-                val askAction = NotificationCompat.Action.Builder(
-                    android.R.drawable.ic_menu_send, "Tanya", askPending
-                ).build()
-
-                val notification = NotificationCompat.Builder(this@WinatraService, CHANNEL_ID)
-                    .setContentTitle("Winatra AI Shortcut")
-                    .setContentText(statusText)
-                    .setSmallIcon(android.R.drawable.ic_menu_search)
-                    .setOngoing(true)
-                    .setPriority(NotificationCompat.PRIORITY_LOW)
-                    .addAction(0, "Ganti Mode", changeModePending)
-                    .addAction(0, "Jawab", answerPending)
-                    .addAction(askAction)
-                    .build()
-
-                try {
-                    startForeground(NOTIF_ID, notification)
-                    Log.d(TAG, "startForeground succeeded")
-                } catch (e: Exception) {
-                    Log.e(TAG, "startForeground failed", e)
-                }
-            }
+        val answerIntent = Intent(this, ClipboardActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-    }
+        val answerPending = PendingIntent.getActivity(
+            this, 0, answerIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
         val changeModeIntent = Intent(this, WinatraService::class.java).apply {
             action = ACTION_CHANGE_MODE
@@ -373,7 +316,7 @@ class WinatraService : Service() {
         Log.d(TAG, "Result notification shown: $title")
     }
 
-    // ========== LIMIT & PREMIUM FUNCTIONS ==========
+    // ========== LIMIT & PREMIUM ==========
     private fun checkAndShowLimit(): Boolean {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val remaining = prefs.getInt("remaining_quota", -1)
@@ -402,7 +345,6 @@ class WinatraService : Service() {
         Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
 
         syncRemainingQuotaToFirestore(DEFAULT_DAILY_QUOTA)
-        showPersistentNotification()
     }
 
     private suspend fun syncRemainingQuotaToFirestore(quota: Int) {
@@ -419,26 +361,6 @@ class WinatraService : Service() {
         }
     }
 
-    private suspend fun syncQuotaFromFirestore() {
-        try {
-            val user = FirebaseAuth.getInstance().currentUser ?: return
-            val doc = FirebaseFirestore.getInstance()
-                .collection("users")
-                .document(user.uid)
-                .get()
-                .await()
-            if (doc.exists()) {
-                val remoteQuota = doc.getLong("remainingQuota")?.toInt() ?: DEFAULT_DAILY_QUOTA
-                val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                prefs.edit().putInt("remaining_quota", remoteQuota).apply()
-                Log.d(TAG, "Synced quota from Firestore: $remoteQuota")
-                showPersistentNotification()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "syncQuotaFromFirestore: ${e.message}")
-        }
-    }
-
     private fun decrementRemainingQuota() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = prefs.getInt("remaining_quota", 0)
@@ -447,25 +369,23 @@ class WinatraService : Service() {
             prefs.edit().putInt("remaining_quota", newVal).apply()
             Log.d(TAG, "decrementRemainingQuota: $current -> $newVal")
             scope.launch { syncRemainingQuotaToFirestore(newVal) }
-            showPersistentNotification()
         }
     }
 
     private suspend fun isUserPremium(): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val user = FirebaseAuth.getInstance().currentUser
-                if (user == null) return@withContext false
+                val user = FirebaseAuth.getInstance().currentUser ?: return@withContext false
                 val doc = FirebaseFirestore.getInstance().collection("users").document(user.uid).get().await()
                 if (!doc.exists()) return@withContext false
                 val isPremiumFlag = doc.getBoolean("isPremium") ?: false
                 if (!isPremiumFlag) return@withContext false
                 val premiumExpiry = doc.getTimestamp("premiumExpiry")?.toDate()
                 if (premiumExpiry == null) return@withContext true
-                return@withContext premiumExpiry.after(Date())
+                premiumExpiry.after(Date())
             } catch (e: Exception) {
                 Log.e(TAG, "isUserPremium error: ${e.message}")
-                return@withContext false
+                false
             }
         }
     }
@@ -484,17 +404,15 @@ class WinatraService : Service() {
         showResultNotification("Winatra AI", "⏳ Memproses pertanyaan...")
 
         scope.launch {
-            try {
-                resetDailyQuotaIfNeeded()
-                syncQuotaFromFirestore()
-                val isPremium = isUserPremium()
-                if (!isPremium) {
-                    if (!checkAndShowLimit()) return@launch
-                } else {
-                    Log.d(TAG, "User is premium, skipping limit check")
-                }
+            resetDailyQuotaIfNeeded()
+            val isPremium = isUserPremium()
+            if (!isPremium) {
+                if (!checkAndShowLimit()) return@launch
+            } else {
+                Log.d(TAG, "User is premium, skipping limit check")
+            }
 
-                val answer = withContext(Dispatchers.IO) {
+            val answer = withContext(Dispatchers.IO) {
                 callAIWithFallback(question, if (modeType == "discussion") "Essay" else mode)
             }
 
@@ -519,18 +437,13 @@ class WinatraService : Service() {
                         showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in processClipboardResult: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    showResultNotification("Winatra AI", "Terjadi error: ${e.message}")
-                }
             }
         }
     }
 
     private fun getUserFriendlyErrorMessage(rawError: String): String {
         return when {
-            rawError.contains("All API keys failed") -> "Layanan AI sedang sangat sibuk. Coba lagi nanti. Jika masalah berlanjut, hubungi admin untuk informasi paket premium."
+            rawError.contains("All API keys failed") -> "Layanan AI sedang sangat sibuk. Coba lagi nanti. Jika masalah berlanjut, hubungi admin."
             rawError.contains("429") -> "Trafik padat, coba lagi sebentar."
             rawError.contains("401") || rawError.contains("403") -> "Ada masalah teknis. Tim kami sedang memperbaiki."
             rawError.contains("timeout") -> "Koneksi lambat, coba lagi dengan sinyal lebih baik."
@@ -576,7 +489,7 @@ class WinatraService : Service() {
         }
     }
 
-    // ========== API CALL WITH FALLBACK (Groq + DeepSeek) ==========
+    // ========== API ROUND-ROBIN ==========
     private fun getStoredApiIndex(): Int {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getInt(PREF_KEY_API_INDEX, 0).coerceAtLeast(0) % API_ENDPOINTS.size
@@ -638,8 +551,8 @@ class WinatraService : Service() {
 
         return try {
             val response = client.newCall(request).execute()
-            val responseBody = response.body?.string()
-            if (response.isSuccessful && responseBody != null) {
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful && responseBody.isNotEmpty()) {
                 val result = JSONObject(responseBody)
                 var answer = result
                     .getJSONArray("choices")
@@ -705,8 +618,8 @@ class WinatraService : Service() {
 
         return try {
             val response = client.newCall(request).execute()
-            val responseBody = response.body?.string()
-            if (response.isSuccessful && responseBody != null) {
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful && responseBody.isNotEmpty()) {
                 val result = JSONObject(responseBody)
                 result
                     .getJSONArray("choices")
