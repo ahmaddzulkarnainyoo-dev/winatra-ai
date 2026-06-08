@@ -55,28 +55,41 @@ class WinatraKeyboardService : InputMethodService() {
     companion object {
         const val TAG = "WinatraKeyboardService"
         const val PREFS_NAME = "winatra_prefs"
-        private val GROQ_API_KEYS = arrayOf(
-            "BUILD_GROQ_KEY_1",
-            "BUILD_GROQ_KEY_2",
-            "BUILD_GROQ_KEY_3",
-            "BUILD_GROQ_KEY_4",
-            "BUILD_GROQ_KEY_5",
-            "BUILD_GROQ_KEY_6",
-            "BUILD_GROQ_KEY_7",
-            "BUILD_GROQ_KEY_8",
-            "BUILD_GROQ_KEY_9",
-            "BUILD_GROQ_KEY_10",
-            "BUILD_GROQ_KEY_11",
-            "BUILD_GROQ_KEY_12",
-            "BUILD_GROQ_KEY_13",
-            "BUILD_GROQ_KEY_14",
-            "BUILD_GROQ_KEY_15",
-            "BUILD_GROQ_KEY_16",
-            "BUILD_GROQ_KEY_17",
-            "BUILD_GROQ_KEY_18",
-            "BUILD_GROQ_KEY_19",
-            "BUILD_GROQ_KEY_20"
+        const val PREF_KEY_API_INDEX = "api_key_index"
+        const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
+        const val DEFAULT_DAILY_QUOTA = 15
+
+        data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
+
+        private val API_ENDPOINTS = listOf(
+            ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_2", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_3", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_4", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_5", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_6", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_7", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_8", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_9", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_10", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_11", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_12", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_13", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_14", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_15", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_16", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_17", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_18", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_19", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_20", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_21", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_22", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_23", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_GROQ_KEY_25", "https://api.groq.com/openai/v1", "Groq"),
+            ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek")
         )
+
         val ROWS_LOWER = arrayOf(
             arrayOf("q","w","e","r","t","y","u","i","o","p"),
             arrayOf("a","s","d","f","g","h","j","k","l"),
@@ -464,17 +477,16 @@ class WinatraKeyboardService : InputMethodService() {
     }
 
     // ========== USER-FRIENDLY ERROR HANDLING ==========
-    private fun getUserFriendlyErrorMessage(rawError: String): String {
+    private fun getUserFriendlyErrorMessage(rawError: String, keyType: String): String {
+        val errorText = rawError.lowercase()
         return when {
-            rawError.contains("All Groq keys exhausted") -> "Layanan AI sedang sangat sibuk. Silakan coba lagi dalam beberapa menit."
-            rawError.contains("409") || rawError.contains("Conflict") -> "Trafik ramai, coba lagi."
-            rawError.contains("429") || rawError.contains("rate") -> "Layanan padat, coba lagi sebentar."
-            rawError.contains("503") -> "Layanan AI sedang maintenance. Coba lagi nanti."
-            rawError.contains("500") || rawError.contains("502") || rawError.contains("504") -> "Layanan sedang bermasalah. Tim kami sedang memperbaiki."
-            rawError.contains("401") || rawError.contains("403") -> "Ada masalah teknis. Tim kami akan segera memperbaiki."
-            rawError.contains("timeout") || rawError.contains("Timeout") -> "Koneksi lambat, coba lagi dengan sinyal yang lebih baik."
-            rawError.contains("no internet") || rawError.contains("Network") || rawError.contains("UnknownHostException") -> "Tidak ada koneksi internet. Periksa jaringan Anda."
-            else -> "Maaf, terjadi gangguan. Silakan coba beberapa saat lagi."
+            errorText.contains("quota") && errorText.contains("daily") -> "Kuota harian Anda habis. Upgrade ke premium untuk akses tanpa batas. Hubungi admin."
+            errorText.contains("quota") && errorText.contains("limit") -> "Kuota harian Anda habis. Upgrade ke premium untuk akses tanpa batas. Hubungi admin."
+            errorText.contains("429") || errorText.contains("rate") -> "Trafik padat, coba lagi nanti. Pengguna premium mendapat prioritas."
+            errorText.contains("401") || errorText.contains("403") -> "Ada masalah teknis, tim kami sedang memperbaiki."
+            errorText.contains("timeout") || errorText.contains("connect") || errorText.contains("network") || errorText.contains("unknownhostexception") -> "Koneksi internet lambat, periksa jaringan Anda."
+            errorText.contains("all api keys failed") || errorText.contains("all groq keys exhausted") || errorText.contains("all deepseek keys exhausted") -> "Maaf, layanan AI sedang sangat sibuk. Silakan coba lagi beberapa saat. Jika masalah berlanjut, hubungi admin untuk informasi paket premium (wa.me/628...)."
+            else -> "Maaf, layanan AI sedang sangat sibuk. Silakan coba lagi beberapa saat. Jika masalah berlanjut, hubungi admin untuk informasi paket premium (wa.me/628...)."
         }
     }
     // ========== END USER-FRIENDLY ==========
@@ -487,6 +499,7 @@ class WinatraKeyboardService : InputMethodService() {
         }
         lastQuestion = question
         scope.launch {
+            resetDailyQuotaIfNeeded()
             // CEK PREMIUM DAN LIMIT
             val isPremium = isUserPremium()
             if (!isPremium) {
@@ -494,7 +507,7 @@ class WinatraKeyboardService : InputMethodService() {
             } else {
                 Log.d(TAG, "User is premium, skipping limit check")
             }
-            sendToGroq(question, isPremium)
+            sendToAi(question, isPremium)
         }
     }
 
@@ -504,7 +517,7 @@ class WinatraKeyboardService : InputMethodService() {
         Log.d(TAG, "checkAndShowLimit: remaining = $remaining")
         if (remaining == -1) return true
         if (remaining <= 0) {
-            showStatus("Maaf, lalu lintas sedang padat. Coba lagi nanti atau upgrade premium.")
+            showStatus("Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]. Admin akan mengaktifkan premium setelah konfirmasi.")
             return false
         }
         return true
@@ -516,6 +529,33 @@ class WinatraKeyboardService : InputMethodService() {
         if (current > 0) {
             prefs.edit().putInt("remaining_quota", current - 1).apply()
             Log.d(TAG, "decrementRemainingQuota: $current -> ${current - 1}")
+        }
+    }
+
+    private suspend fun resetDailyQuotaIfNeeded() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val lastReset = prefs.getString(PREF_KEY_LAST_QUOTA_RESET, "") ?: ""
+        if (lastReset == today) return
+
+        prefs.edit()
+            .putString(PREF_KEY_LAST_QUOTA_RESET, today)
+            .putInt("remaining_quota", DEFAULT_DAILY_QUOTA)
+            .apply()
+        Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
+
+        try {
+            val user = FirebaseAuth.getInstance().currentUser
+            if (user != null) {
+                FirebaseFirestore.getInstance()
+                    .collection("users")
+                    .document(user.uid)
+                    .update("remainingQuota", DEFAULT_DAILY_QUOTA)
+                    .await()
+                Log.d(TAG, "Synced remainingQuota to Firestore: $DEFAULT_DAILY_QUOTA")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "syncRemainingQuotaToFirestore: ${e.message}")
         }
     }
 
@@ -547,6 +587,9 @@ class WinatraKeyboardService : InputMethodService() {
                 }
 
                 val isValid = premiumExpiry.after(Date())
+                if (!isValid) {
+                    Log.d(TAG, "Premium expired, user dianggap free")
+                }
                 Log.d(TAG, "isUserPremium: isPremium=$isPremiumFlag, expiryValid=$isValid")
                 return@withContext isValid
             } catch (e: Exception) {
@@ -561,15 +604,15 @@ class WinatraKeyboardService : InputMethodService() {
         aiStatus.visibility = View.VISIBLE
     }
 
-    private fun sendToGroq(question: String, isPremium: Boolean = false) {
+    private fun sendToAi(question: String, isPremium: Boolean = false) {
         showStatus("⏳ Memproses...")
         val mode = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString("keyboard_mode", "Essay") ?: "Essay"
         scope.launch {
-            val result = callGroqWithFallback(question, mode)
+            val result = callAIWithFallback(question, mode)
             withContext(Dispatchers.Main) {
                 if (result.startsWith("Error:")) {
-                    val friendlyMsg = getUserFriendlyErrorMessage(result)
+                    val friendlyMsg = getUserFriendlyErrorMessage(result, "AI")
                     showStatus(friendlyMsg)
                 } else {
                     if (!isPremium) {
@@ -583,19 +626,34 @@ class WinatraKeyboardService : InputMethodService() {
         }
     }
 
-    private fun callGroqWithFallback(question: String, mode: String): String {
-        for (apiKey in GROQ_API_KEYS) {
-            val result = performGroqRequest(apiKey, question, mode)
-            if (result != null && !result.startsWith("Error:")) {
-                return result
-            } else {
-                Log.w(TAG, "Groq API key failed: $result, trying next")
-            }
-        }
-        return "Error: All Groq keys exhausted."
+    private fun getStoredApiIndex(): Int {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(PREF_KEY_API_INDEX, 0).coerceAtLeast(0) % API_ENDPOINTS.size
     }
 
-    private fun performGroqRequest(apiKey: String, question: String, mode: String): String? {
+    private fun saveApiIndex(index: Int) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
+    }
+
+    private fun callAIWithFallback(question: String, mode: String): String {
+        val startIndex = getStoredApiIndex()
+        for (i in API_ENDPOINTS.indices) {
+            val idx = (startIndex + i) % API_ENDPOINTS.size
+            val endpoint = API_ENDPOINTS[idx]
+            val result = performApiRequest(endpoint, question, mode)
+            if (result != null && !result.startsWith("Error:")) {
+                saveApiIndex((idx + 1) % API_ENDPOINTS.size)
+                return result
+            } else {
+                Log.w(TAG, "API endpoint failed: ${endpoint.type} ${endpoint.key.take(12)}... error=$result")
+            }
+        }
+        saveApiIndex((startIndex + 1) % API_ENDPOINTS.size)
+        return "Error: All API keys failed."
+    }
+
+    private fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
         val systemPrompt = if (mode == "PG")
             "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
         else
@@ -619,8 +677,8 @@ class WinatraKeyboardService : InputMethodService() {
 
         val body = json.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
-            .url("https://api.groq.com/openai/v1/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
+            .url("${endpoint.baseUrl}/chat/completions")
+            .addHeader("Authorization", "Bearer ${endpoint.key}")
             .addHeader("Content-Type", "application/json")
             .post(body)
             .build()
@@ -643,10 +701,12 @@ class WinatraKeyboardService : InputMethodService() {
                 }
                 answer
             } else {
-                "Error: ${response.code}"
+                val errorDetails = responseBody ?: ""
+                "Error: ${response.code} ${errorDetails}"
             }
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            val message = e.message ?: "timeout"
+            "Error: $message"
         }
     }
 

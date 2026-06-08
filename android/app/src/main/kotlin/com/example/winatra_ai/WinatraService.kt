@@ -12,12 +12,14 @@ import androidx.core.app.NotificationCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.*
-import kotlinx.coroutines.tasks.await          // <--- TAMBAHKAN INI
+import kotlinx.coroutines.tasks.await
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.util.Date                         // <--- TAMBAHKAN INI
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class WinatraService : Service() {
 
@@ -33,30 +35,17 @@ class WinatraService : Service() {
         const val ACTION_COPY_ANSWER = "ACTION_COPY_ANSWER"
         const val PREFS_NAME = "winatra_prefs"
         const val KEY_MODE = "mode"
+        const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
+        const val DEFAULT_DAILY_QUOTA = 15
         const val TAG = "WinatraService"
-        
-        // 20 API keys - akan diganti oleh GitHub Actions saat build
+        // 6 API keys dari akun Groq berbeda
         private val GROQ_API_KEYS = arrayOf(
-            "BUILD_GROQ_KEY_1",
-            "BUILD_GROQ_KEY_2",
-            "BUILD_GROQ_KEY_3",
-            "BUILD_GROQ_KEY_4",
-            "BUILD_GROQ_KEY_5",
-            "BUILD_GROQ_KEY_6",
-            "BUILD_GROQ_KEY_7",
-            "BUILD_GROQ_KEY_8",
-            "BUILD_GROQ_KEY_9",
-            "BUILD_GROQ_KEY_10",
-            "BUILD_GROQ_KEY_11",
-            "BUILD_GROQ_KEY_12",
-            "BUILD_GROQ_KEY_13",
-            "BUILD_GROQ_KEY_14",
-            "BUILD_GROQ_KEY_15",
-            "BUILD_GROQ_KEY_16",
-            "BUILD_GROQ_KEY_17",
-            "BUILD_GROQ_KEY_18",
-            "BUILD_GROQ_KEY_19",
-            "BUILD_GROQ_KEY_20"
+            "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",
+            "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",
+            "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",
+            "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",
+            "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",
+            "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"
         )
     }
 
@@ -304,134 +293,77 @@ class WinatraService : Service() {
         Log.d(TAG, "Result notification shown: $title")
     }
 
-    // ========== LIMIT FUNCTIONS ==========
+    // ---------- LIMIT FUNCTIONS ----------
     private fun checkAndShowLimit(): Boolean {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val remaining = prefs.getInt("remaining_quota", -1)
-        Log.d(TAG, "checkAndShowLimit: remaining = $remaining")
         if (remaining == -1) return true
         if (remaining <= 0) {
-            showResultNotification(
-                "Winatra AI", 
-                "Maaf, lalu lintas sedang padat. Coba lagi nanti atau upgrade ke premium untuk akses tanpa batas."
-            )
+            showResultNotification("Winatra AI", "Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]. Admin akan mengaktifkan premium setelah konfirmasi.")
             return false
         }
         return true
+    }
+
+    private suspend fun resetDailyQuotaIfNeeded() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        val lastReset = prefs.getString(PREF_KEY_LAST_QUOTA_RESET, "") ?: ""
+        if (lastReset == today) return
+
+        prefs.edit()
+            .putString(PREF_KEY_LAST_QUOTA_RESET, today)
+            .putInt("remaining_quota", DEFAULT_DAILY_QUOTA)
+            .apply()
+
+        Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
+        syncRemainingQuotaToFirestore(DEFAULT_DAILY_QUOTA)
+    }
+
+    private suspend fun syncRemainingQuotaToFirestore(quota: Int) {
+        try {
+            val user = FirebaseAuth.getInstance().currentUser ?: return
+            FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(user.uid)
+                .update("remainingQuota", quota)
+                .await()
+            Log.d(TAG, "Synced remainingQuota to Firestore: $quota")
+        } catch (e: Exception) {
+            Log.e(TAG, "syncRemainingQuotaToFirestore: ${e.message}")
+        }
     }
 
     private fun decrementRemainingQuota() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val current = prefs.getInt("remaining_quota", 0)
         if (current > 0) {
-            val newVal = current - 1
-            prefs.edit().putInt("remaining_quota", newVal).apply()
-            Log.d(TAG, "decrementRemainingQuota: $current -> $newVal")
-        } else {
-            Log.d(TAG, "decrementRemainingQuota: current = 0, nothing to decrement")
+            prefs.edit().putInt("remaining_quota", current - 1).apply()
+            Log.d(TAG, "Remaining quota decreased to ${current - 1}")
         }
     }
-
-    private suspend fun isUserPremium(): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val user = FirebaseAuth.getInstance().currentUser
-                if (user == null) {
-                    Log.d(TAG, "isUserPremium: No logged in user")
-                    return@withContext false
-                }
-
-                val db = FirebaseFirestore.getInstance()
-                val doc = db.collection("users").document(user.uid).get().await()
-                if (!doc.exists()) {
-                    Log.d(TAG, "isUserPremium: User document not found")
-                    return@withContext false
-                }
-
-                val isPremiumFlag = doc.getBoolean("isPremium") ?: false
-                if (!isPremiumFlag) {
-                    return@withContext false
-                }
-
-                val premiumExpiry = doc.getTimestamp("premiumExpiry")?.toDate()
-                if (premiumExpiry == null) {
-                    Log.d(TAG, "isUserPremium: Premium without expiry = unlimited")
-                    return@withContext true
-                }
-
-                val isValid = premiumExpiry.after(Date())
-                Log.d(TAG, "isUserPremium: isPremium=$isPremiumFlag, expiryValid=$isValid")
-                return@withContext isValid
-            } catch (e: Exception) {
-                Log.e(TAG, "isUserPremium: Error checking premium status: ${e.message}")
-                return@withContext false
-            }
-        }
-    }
-    // ========== END LIMIT ==========
-
-    // ========== USER-FRIENDLY ERROR MESSAGES ==========
-    private fun getUserFriendlyErrorMessage(rawError: String): String {
-        return when {
-            rawError.contains("All Groq keys exhausted") -> "Layanan AI sedang sangat sibuk. Silakan coba lagi dalam beberapa menit."
-            rawError.contains("409") || rawError.contains("Conflict") -> "Trafik ramai, coba lagi."
-            rawError.contains("429") || rawError.contains("rate") -> "Layanan padat, coba lagi sebentar."
-            rawError.contains("503") -> "Layanan AI sedang maintenance. Coba lagi nanti."
-            rawError.contains("500") || rawError.contains("502") || rawError.contains("504") -> "Layanan sedang bermasalah. Tim kami sedang memperbaiki."
-            rawError.contains("401") || rawError.contains("403") -> "Ada masalah teknis. Tim kami akan segera memperbaiki."
-            rawError.contains("timeout") || rawError.contains("Timeout") -> "Koneksi lambat, coba lagi dengan sinyal yang lebih baik."
-            rawError.contains("no internet") || rawError.contains("Network") || rawError.contains("UnknownHostException") -> "Tidak ada koneksi internet. Periksa jaringan Anda."
-            else -> "Maaf, terjadi gangguan. Silakan coba beberapa saat lagi."
-        }
-    }
-    // ========== END USER-FRIENDLY ==========
+    // ---------- END LIMIT FUNCTIONS ----------
 
     private fun processClipboardResult(question: String, modeType: String = "answer") {
         val mode = getMode()
         Log.d(TAG, "processClipboardResult: question length=${question.length}, mode=$mode, modeType=$modeType")
 
-        if (question.isEmpty()) {
-            Log.w(TAG, "Clipboard is empty!")
-            showResultNotification("Winatra AI", "Clipboard kosong! Salin pertanyaan terlebih dahulu.")
-            return
-        }
-
-        Log.d(TAG, "Question received: $question")
-        showResultNotification("Winatra AI", "⏳ Memproses pertanyaan...")
-        
         scope.launch {
-            // CEK PREMIUM DAN LIMIT
-            val isPremium = isUserPremium()
-            if (!isPremium) {
-                if (!checkAndShowLimit()) return@launch
-            } else {
-                Log.d(TAG, "User is premium, skipping limit check")
+            resetDailyQuotaIfNeeded()
+
+            if (question.isEmpty()) {
+                Log.w(TAG, "Clipboard is empty!")
+                showResultNotification("Winatra AI", "Clipboard kosong! Copy pertanyaan dulu.")
+                return@launch
             }
 
-            val answer = withContext(Dispatchers.IO) { 
-                callGroqWithFallback(question, if (modeType == "discussion") "Essay" else mode) 
-            }
-            
+            if (!checkAndShowLimit()) return@launch
+
+            Log.d(TAG, "Question received: $question")
+            showResultNotification("Winatra AI", "Memproses...")
+            val answer = withContext(Dispatchers.IO) { callGroqWithFallback(question, if (modeType == "discussion") "Essay" else mode) }
             withContext(Dispatchers.Main) {
-                // Cek apakah answer menunjukkan kegagalan total
-                val isError = answer.startsWith("Error:") || 
-                               answer.contains("All Groq keys exhausted") ||
-                               answer.contains("429") ||
-                               answer.contains("401") ||
-                               answer.contains("403")
-                
-                if (isError) {
-                    // Gagal total, jangan kurangi kuota, tampilkan pesan ramah
-                    val friendlyMsg = getUserFriendlyErrorMessage(answer)
-                    showResultNotification("Winatra AI", friendlyMsg)
-                    return@withContext
-                }
-
-                // Sukses, baru kurangi kuota (jika tidak premium)
-                if (!isPremium) {
-                    decrementRemainingQuota()
-                }
-
+                decrementRemainingQuota()
                 if (modeType == "discussion") {
                     showDiscussionNotification(question, answer)
                 } else {
@@ -471,26 +403,19 @@ class WinatraService : Service() {
 
     private suspend fun handleExplain(question: String, answer: String) {
         Log.d(TAG, "handleExplain called")
-        showResultNotification("Winatra AI", "📖 Menyiapkan penjelasan...")
+        showResultNotification("Winatra AI", "Menyiapkan penjelasan...")
         val explanation = withContext(Dispatchers.IO) {
             callExplanationWithFallback(question, answer)
         }
         withContext(Dispatchers.Main) {
-            if (explanation.startsWith("Error:") || explanation.contains("All Groq keys exhausted")) {
-                val friendlyMsg = getUserFriendlyErrorMessage(explanation)
-                showResultNotification("Penjelasan", friendlyMsg)
-            } else {
-                showResultNotification("Penjelasan", explanation)
-            }
+            showResultNotification("Penjelasan", explanation)
         }
     }
 
     private fun callGroqWithFallback(question: String, mode: String): String {
         for (apiKey in GROQ_API_KEYS) {
             val result = performGroqRequest(apiKey, question, mode)
-            if (result != null && !result.startsWith("Error 429") && 
-                !result.startsWith("Error 401") && !result.startsWith("Error 403") && 
-                !result.startsWith("Error:")) {
+            if (result != null && !result.startsWith("Error 429") && !result.startsWith("Error 401") && !result.startsWith("Error 403") && !result.startsWith("Error:")) {
                 return result
             } else if (result != null && (result.contains("429") || result.contains("401") || result.contains("403"))) {
                 Log.w(TAG, "Groq API key failed with rate limit/auth error: $result, trying next")
@@ -561,16 +486,14 @@ class WinatraService : Service() {
     private fun callExplanationWithFallback(question: String, answer: String): String {
         for (apiKey in GROQ_API_KEYS) {
             val result = performGroqExplanationRequest(apiKey, question, answer)
-            if (result != null && !result.startsWith("Error 429") && 
-                !result.startsWith("Error 401") && !result.startsWith("Error 403") && 
-                !result.startsWith("Error:")) {
+            if (result != null && !result.startsWith("Error 429") && !result.startsWith("Error 401") && !result.startsWith("Error 403") && !result.startsWith("Error:")) {
                 return result
             } else if (result != null && (result.contains("429") || result.contains("401") || result.contains("403"))) {
                 Log.w(TAG, "Groq explanation key failed: $result, trying next")
                 continue
             }
         }
-        return "Error: All Groq keys exhausted."
+        return "Error: All Groq explanation keys exhausted."
     }
 
     private fun performGroqExplanationRequest(apiKey: String, question: String, answer: String): String? {
