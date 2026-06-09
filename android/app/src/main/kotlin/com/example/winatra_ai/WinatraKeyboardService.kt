@@ -638,19 +638,25 @@ class WinatraKeyboardService : InputMethodService() {
     private suspend fun callAIWithFallback(question: String, mode: String): String {
         // Salin daftar berbobot untuk request ini (akan diubah jika ada endpoint gagal)
         val candidates = WEIGHTED_ENDPOINTS.toMutableList()
+        Log.i(TAG, "Starting API call with ${candidates.size} weighted candidates (Q: ${question.take(50)})")
+        var attemptCount = 0
         while (candidates.isNotEmpty()) {
+            attemptCount++
             // Pilih endpoint secara acak (dengan bobot) dari daftar kandidat
             val idx = Random.nextInt(candidates.size)
             val endpoint = candidates[idx]
+            Log.d(TAG, "Attempt $attemptCount: Using ${endpoint.type} (key=${endpoint.key.take(15)}...)")
             val result = performApiRequest(endpoint, question, mode)
             if (result != null && !result.startsWith("Error:")) {
+                Log.i(TAG, "✓ Success from ${endpoint.type} after $attemptCount attempts")
                 return result
             } else {
                 // Hapus endpoint yang gagal untuk request ini (agar tidak dicoba lagi)
                 candidates.removeAt(idx)
-                Log.w(TAG, "${endpoint.type} failed (${result?.take(20)}), remaining: ${candidates.size}")
+                Log.w(TAG, "✗ ${endpoint.type} failed: ${result?.take(30)}, remaining: ${candidates.size}")
             }
         }
+        Log.e(TAG, "✗ All API keys failed after $attemptCount attempts!")
         return "Error: All API keys failed."
     }
 
@@ -658,6 +664,12 @@ class WinatraKeyboardService : InputMethodService() {
         val systemPrompt = if (mode == "PG") "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
                           else "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
         val model = if (endpoint.type == "DeepSeek") "deepseek-chat" else "llama-3.3-70b-versatile"
+
+        // Validate API key
+        if (endpoint.key.startsWith("BUILD_")) {
+            Log.e(TAG, "❌ INVALID KEY DETECTED: ${endpoint.key} (placeholder not replaced!)")
+            return "Error: placeholder_key"
+        }
 
         val json = JSONObject().apply {
             put("model", model)
@@ -669,14 +681,16 @@ class WinatraKeyboardService : InputMethodService() {
             put("temperature", 0.3)
         }
 
+        val url = "${endpoint.baseUrl}/chat/completions"
         val request = Request.Builder()
-            .url("${endpoint.baseUrl}/chat/completions")
+            .url(url)
             .addHeader("Authorization", "Bearer ${endpoint.key}")
             .addHeader("Content-Type", "application/json")
             .post(json.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
         return try {
+            Log.d(TAG, "→ Calling ${endpoint.type} at $url (model=$model)")
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: ""
             if (response.isSuccessful) {
@@ -686,17 +700,27 @@ class WinatraKeyboardService : InputMethodService() {
                     val firstValid = answer.uppercase().firstOrNull { it in 'A'..'D' }
                     answer = if (firstValid != null) firstValid.toString() else "?"
                 }
+                Log.d(TAG, "← Got response from ${endpoint.type}: ${answer.take(50)}...")
                 answer
             } else {
-                when (response.code) {
-                    429, 503 -> "Error: rate_limit"
-                    401, 403 -> "Error: auth_failed"
-                    else -> "Error: ${response.code}"
+                val errorMsg = when (response.code) {
+                    429, 503 -> "rate_limit"
+                    401, 403 -> "auth_failed (key invalid?)"
+                    else -> response.code.toString()
                 }
+                Log.w(TAG, "✗ ${endpoint.type} returned ${response.code}: $errorMsg. Body: ${body.take(100)}")
+                "Error: $errorMsg"
             }
-        } catch (e: java.net.SocketTimeoutException) { "Error: timeout"
-        } catch (e: java.io.IOException) { "Error: network"
-        } catch (e: Exception) { "Error: ${e.message}" }
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.w(TAG, "✗ ${endpoint.type} timeout: ${e.message}")
+            "Error: timeout"
+        } catch (e: java.io.IOException) {
+            Log.w(TAG, "✗ ${endpoint.type} network error: ${e.message}")
+            "Error: network"
+        } catch (e: Exception) {
+            Log.e(TAG, "✗ ${endpoint.type} exception: ${e.message}", e)
+            "Error: ${e.message}"
+        }
     }
 
     private fun dp(v: Int) = TypedValue.applyDimension(
