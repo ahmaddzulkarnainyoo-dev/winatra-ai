@@ -31,8 +31,8 @@ class WinatraKeyboardService : InputMethodService() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     private var isShift = false
@@ -63,6 +63,7 @@ class WinatraKeyboardService : InputMethodService() {
 
         data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
 
+        // 24 Groq keys + 1 DeepSeek = 25 total
         private val API_ENDPOINTS = listOf(
             ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_2", "https://api.groq.com/openai/v1", "Groq"),
@@ -88,7 +89,6 @@ class WinatraKeyboardService : InputMethodService() {
             ApiEndpoint("BUILD_GROQ_KEY_22", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_23", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq"),
-            ApiEndpoint("BUILD_GROQ_KEY_25", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek")
         )
 
@@ -191,9 +191,9 @@ class WinatraKeyboardService : InputMethodService() {
                     val isPremium = isUserPremium()
                     withContext(Dispatchers.Main) {
                         if (isPremium) {
-                            aiStatus.text = "Akses premium: tanpa batas"
+                            aiStatus.text = "✨ Akun Premium: Tanpa Batas ✨"
                             aiStatus.visibility = View.VISIBLE
-                        } else if (aiStatus.text.isEmpty() || aiStatus.text.startsWith("Akses premium:")) {
+                        } else {
                             aiStatus.visibility = View.GONE
                         }
                     }
@@ -441,7 +441,7 @@ class WinatraKeyboardService : InputMethodService() {
         val ic = currentInputConnection ?: return
         when (key) {
             "⌫" -> {
-                if (currentTab == 1) {
+                if (currentTab == 1 && ::aiInput.isInitialized) {
                     val len = aiInput.text.length
                     if (len > 0) aiInput.text.delete(len - 1, len)
                 } else {
@@ -454,15 +454,19 @@ class WinatraKeyboardService : InputMethodService() {
                     isShift -> isCaps = true
                     else -> isShift = true
                 }
-                refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
+                if (keyboardPanel.getChildAt(0) is LinearLayout) {
+                    refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
+                }
             }
             "?123", "ABC" -> {
                 isSymbol = !isSymbol
                 isShift = false
-                refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
+                if (keyboardPanel.getChildAt(0) is LinearLayout) {
+                    refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
+                }
             }
             "SPACE" -> {
-                if (currentTab == 1) {
+                if (currentTab == 1 && ::aiInput.isInitialized) {
                     val start = aiInput.selectionStart
                     val end = aiInput.selectionEnd
                     aiInput.text.replace(start, end, " ")
@@ -471,7 +475,7 @@ class WinatraKeyboardService : InputMethodService() {
                 }
             }
             "ENTER" -> {
-                if (currentTab == 1) {
+                if (currentTab == 1 && ::aiInput.isInitialized) {
                     val start = aiInput.selectionStart
                     val end = aiInput.selectionEnd
                     aiInput.text.replace(start, end, "\n")
@@ -480,7 +484,7 @@ class WinatraKeyboardService : InputMethodService() {
                 }
             }
             else -> {
-                if (currentTab == 1) {
+                if (currentTab == 1 && ::aiInput.isInitialized) {
                     val start = aiInput.selectionStart
                     val end = aiInput.selectionEnd
                     aiInput.text.replace(start, end, key)
@@ -489,65 +493,64 @@ class WinatraKeyboardService : InputMethodService() {
                 }
                 if (isShift && !isCaps) {
                     isShift = false
-                    refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
+                    if (keyboardPanel.getChildAt(0) is LinearLayout) {
+                        refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
+                    }
                 }
             }
         }
     }
 
-    // ========== USER-FRIENDLY ERROR HANDLING ==========
+    // ========== USER-FRIENDLY ERROR ==========
     private fun getUserFriendlyErrorMessage(rawError: String, keyType: String): String {
         val errorText = rawError.lowercase()
         return when {
-            errorText.contains("quota") && errorText.contains("daily") -> "Kuota harian Anda habis. Upgrade ke premium untuk akses tanpa batas. Hubungi admin."
-            errorText.contains("quota") && errorText.contains("limit") -> "Kuota harian Anda habis. Upgrade ke premium untuk akses tanpa batas. Hubungi admin."
-            errorText.contains("429") || errorText.contains("rate") -> "Trafik padat, coba lagi nanti. Pengguna premium mendapat prioritas."
+            errorText.contains("all api keys failed") -> "Maaf, layanan AI sedang sangat sibuk. Silakan coba lagi beberapa saat."
+            errorText.contains("429") -> "Trafik padat, coba lagi nanti."
             errorText.contains("401") || errorText.contains("403") -> "Ada masalah teknis, tim kami sedang memperbaiki."
-            errorText.contains("timeout") || errorText.contains("connect") || errorText.contains("network") || errorText.contains("unknownhostexception") -> "Koneksi internet lambat, periksa jaringan Anda."
-            errorText.contains("all api keys failed") || errorText.contains("all groq keys exhausted") || errorText.contains("all deepseek keys exhausted") -> "Maaf, layanan AI sedang sangat sibuk. Silakan coba lagi beberapa saat. Jika masalah berlanjut, hubungi admin untuk informasi paket premium (wa.me/628...)."
-            else -> "Maaf, layanan AI sedang sangat sibuk. Silakan coba lagi beberapa saat. Jika masalah berlanjut, hubungi admin untuk informasi paket premium (wa.me/628...)."
-        }
-    }
-    // ========== END USER-FRIENDLY ==========
-
-    private fun handleAIQuery() {
-        val question = aiInput.text.toString().trim()
-        if (question.isEmpty()) {
-            showStatus("Ketik pertanyaan dulu...")
-            return
-        }
-        lastQuestion = question
-        scope.launch {
-            try {
-                resetDailyQuotaIfNeeded()
-                syncQuotaFromFirestore()
-                // CEK PREMIUM DAN LIMIT
-                val isPremium = isUserPremium()
-                if (!isPremium) {
-                    if (!checkAndShowLimit()) return@launch
-                } else {
-                    Log.d(TAG, "User is premium, skipping limit check")
-                }
-                sendToAi(question, isPremium)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in handleAIQuery: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    showStatus("Terjadi error: ${e.message}")
-                }
-            }
+            errorText.contains("timeout") -> "Koneksi lambat, coba lagi dengan sinyal lebih baik."
+            errorText.contains("network") -> "Tidak ada koneksi internet. Periksa jaringan Anda."
+            else -> "Maaf, terjadi gangguan. Silakan coba lagi nanti."
         }
     }
 
+    // ---------- LIMIT & PREMIUM ----------
     private fun checkAndShowLimit(): Boolean {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val remaining = prefs.getInt("remaining_quota", -1)
-        Log.d(TAG, "checkAndShowLimit: remaining = $remaining")
-        if (remaining == -1) return true
-        if (remaining <= 0) {
-            showStatus("Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]. Admin akan mengaktifkan premium setelah konfirmasi.")
+        if (remaining <= 0 && remaining != -1) {
+            showStatus("Kuota harian habis. Hubungi admin untuk langganan (5k/hari, 15k/minggu, 30k/bulan).")
             return false
         }
         return true
+    }
+
+    private suspend fun resetDailyQuotaIfNeeded() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        if (prefs.getString(PREF_KEY_LAST_QUOTA_RESET, "") == today) return
+        prefs.edit()
+            .putString(PREF_KEY_LAST_QUOTA_RESET, today)
+            .putInt("remaining_quota", DEFAULT_DAILY_QUOTA)
+            .apply()
+        Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
+        // Sync ke Firestore
+        FirebaseAuth.getInstance().currentUser?.let { user ->
+            try {
+                FirebaseFirestore.getInstance().collection("users").document(user.uid)
+                    .update("remainingQuota", DEFAULT_DAILY_QUOTA).await()
+            } catch (e: Exception) { Log.e(TAG, "Failed to sync reset quota: ${e.message}") }
+        }
+    }
+
+    private suspend fun syncQuotaFromFirestore() {
+        try {
+            val user = FirebaseAuth.getInstance().currentUser ?: return
+            val doc = FirebaseFirestore.getInstance().collection("users").document(user.uid).get().await()
+            val remoteQuota = doc.getLong("remainingQuota")?.toInt() ?: DEFAULT_DAILY_QUOTA
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putInt("remaining_quota", remoteQuota).apply()
+        } catch (e: Exception) { Log.e(TAG, "syncQuotaFromFirestore error: ${e.message}") }
     }
 
     private fun decrementRemainingQuota() {
@@ -556,107 +559,28 @@ class WinatraKeyboardService : InputMethodService() {
         if (current > 0) {
             val newVal = current - 1
             prefs.edit().putInt("remaining_quota", newVal).apply()
-            Log.d(TAG, "decrementRemainingQuota: $current -> $newVal")
             scope.launch {
-                try {
-                    val user = FirebaseAuth.getInstance().currentUser ?: return@launch
-                    FirebaseFirestore.getInstance()
-                        .collection("users")
-                        .document(user.uid)
-                        .update("remainingQuota", newVal)
-                        .await()
-                    Log.d(TAG, "Synced remainingQuota to Firestore: $newVal")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error syncing quota decrement: ${e.message}")
+                FirebaseAuth.getInstance().currentUser?.let { user ->
+                    try {
+                        FirebaseFirestore.getInstance().collection("users").document(user.uid)
+                            .update("remainingQuota", newVal).await()
+                    } catch (e: Exception) { Log.e(TAG, "Failed to sync decrement: ${e.message}") }
                 }
             }
         }
     }
 
-    private suspend fun resetDailyQuotaIfNeeded() {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-        val lastReset = prefs.getString(PREF_KEY_LAST_QUOTA_RESET, "") ?: ""
-        if (lastReset == today) return
-
-        prefs.edit()
-            .putString(PREF_KEY_LAST_QUOTA_RESET, today)
-            .putInt("remaining_quota", DEFAULT_DAILY_QUOTA)
-            .apply()
-        Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
-
+    private suspend fun isUserPremium(): Boolean = withContext(Dispatchers.IO) {
         try {
-            val user = FirebaseAuth.getInstance().currentUser
-            if (user != null) {
-                FirebaseFirestore.getInstance()
-                    .collection("users")
-                    .document(user.uid)
-                    .update("remainingQuota", DEFAULT_DAILY_QUOTA)
-                    .await()
-                Log.d(TAG, "Synced remainingQuota to Firestore: $DEFAULT_DAILY_QUOTA")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "syncRemainingQuotaToFirestore: ${e.message}")
-        }
-    }
-
-    private suspend fun syncQuotaFromFirestore() {
-        try {
-            val user = FirebaseAuth.getInstance().currentUser ?: return
-            val doc = FirebaseFirestore.getInstance()
-                .collection("users")
-                .document(user.uid)
-                .get()
-                .await()
-            if (doc.exists()) {
-                val remoteQuota = doc.getLong("remainingQuota")?.toInt() ?: DEFAULT_DAILY_QUOTA
-                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                prefs.edit().putInt("remaining_quota", remoteQuota).apply()
-                Log.d(TAG, "Synced quota from Firestore: $remoteQuota")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "syncQuotaFromFirestore: ${e.message}")
-        }
-    }
-
-    private suspend fun isUserPremium(): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                val user = FirebaseAuth.getInstance().currentUser
-                if (user == null) {
-                    Log.d(TAG, "isUserPremium: No logged in user")
-                    return@withContext false
-                }
-
-                val db = FirebaseFirestore.getInstance()
-                val doc = db.collection("users").document(user.uid).get().await()
-                if (!doc.exists()) {
-                    Log.d(TAG, "isUserPremium: User document not found")
-                    return@withContext false
-                }
-
-                val isPremiumFlag = doc.getBoolean("isPremium") ?: false
-                if (!isPremiumFlag) {
-                    return@withContext false
-                }
-
-                val premiumExpiry = doc.getTimestamp("premiumExpiry")?.toDate()
-                if (premiumExpiry == null) {
-                    Log.d(TAG, "isUserPremium: Premium without expiry = unlimited")
-                    return@withContext true
-                }
-
-                val isValid = premiumExpiry.after(Date())
-                if (!isValid) {
-                    Log.d(TAG, "Premium expired, user dianggap free")
-                }
-                Log.d(TAG, "isUserPremium: isPremium=$isPremiumFlag, expiryValid=$isValid")
-                return@withContext isValid
-            } catch (e: Exception) {
-                Log.e(TAG, "isUserPremium: Error checking premium status: ${e.message}")
-                return@withContext false
-            }
-        }
+            val user = FirebaseAuth.getInstance().currentUser ?: return@withContext false
+            val doc = FirebaseFirestore.getInstance().collection("users").document(user.uid).get().await()
+            if (!doc.exists()) return@withContext false
+            val isPremium = doc.getBoolean("isPremium") ?: false
+            if (!isPremium) return@withContext false
+            val expiry = doc.getTimestamp("premiumExpiry")?.toDate()
+            if (expiry == null) return@withContext true
+            expiry.after(Date())
+        } catch (e: Exception) { false }
     }
 
     private fun showStatus(msg: String) {
@@ -664,109 +588,101 @@ class WinatraKeyboardService : InputMethodService() {
         aiStatus.visibility = View.VISIBLE
     }
 
-    private fun sendToAi(question: String, isPremium: Boolean = false) {
-        if (!::aiInput.isInitialized || !::aiStatus.isInitialized) {
-            Log.e(TAG, "sendToAi called before view initialization")
+    private fun handleAIQuery() {
+        // Cek login
+        if (FirebaseAuth.getInstance().currentUser == null) {
+            showStatus("Silakan login terlebih dahulu.")
             return
         }
-        
+        val question = aiInput.text.toString().trim()
+        if (question.isEmpty()) {
+            showStatus("Ketik pertanyaan dulu...")
+            return
+        }
+        lastQuestion = question
+        scope.launch {
+            resetDailyQuotaIfNeeded()
+            syncQuotaFromFirestore()
+            val isPremium = isUserPremium()
+            if (!isPremium && !checkAndShowLimit()) return@launch
+            sendToAi(question, isPremium)
+        }
+    }
+
+    private fun sendToAi(question: String, isPremium: Boolean = false) {
         showStatus("⏳ Memproses...")
         val mode = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString("keyboard_mode", "Essay") ?: "Essay"
         scope.launch {
-            try {
-                val result = callAIWithFallback(question, mode)
-                withContext(Dispatchers.Main) {
-                    if (result.startsWith("Error:")) {
-                        val friendlyMsg = getUserFriendlyErrorMessage(result, "AI")
-                        showStatus(friendlyMsg)
-                    } else {
-                        if (!isPremium) {
-                            decrementRemainingQuota()
-                        }
-                        lastAnswer = result
-                        aiStatus.visibility = View.GONE
-                        switchTab(2)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in sendToAi: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    showStatus("Terjadi error: ${e.message}")
+            val result = callAIWithFallback(question, mode)
+            withContext(Dispatchers.Main) {
+                if (result.startsWith("Error:")) {
+                    showStatus(getUserFriendlyErrorMessage(result, "AI"))
+                } else {
+                    if (!isPremium) decrementRemainingQuota()
+                    lastAnswer = result
+                    aiStatus.visibility = View.GONE
+                    switchTab(2)
                 }
             }
         }
     }
 
+    // ---------- API ROUND-ROBIN ----------
     private fun getStoredApiIndex(): Int {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getInt(PREF_KEY_API_INDEX, 0).coerceAtLeast(0) % API_ENDPOINTS.size
     }
 
     private fun saveApiIndex(index: Int) {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
     }
 
     private fun callAIWithFallback(question: String, mode: String): String {
-        val startIndex = getStoredApiIndex()
+        val startIdx = getStoredApiIndex()
         for (i in API_ENDPOINTS.indices) {
-            val idx = (startIndex + i) % API_ENDPOINTS.size
+            val idx = (startIdx + i) % API_ENDPOINTS.size
             val endpoint = API_ENDPOINTS[idx]
             val result = performApiRequest(endpoint, question, mode)
             if (result != null && !result.startsWith("Error:")) {
-                saveApiIndex((idx + 1) % API_ENDPOINTS.size)
+                saveApiIndex(idx + 1)
                 return result
-            } else {
-                Log.w(TAG, "API endpoint failed: ${endpoint.type} ${endpoint.key.take(12)}... error=$result")
             }
         }
-        saveApiIndex((startIndex + 1) % API_ENDPOINTS.size)
+        saveApiIndex(startIdx + 1)
         return "Error: All API keys failed."
     }
 
     private fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
-        val systemPrompt = if (mode == "PG")
-            "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
-        else
-            "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+        val systemPrompt = if (mode == "PG") "Jawab HANYA dengan satu huruf: A, B, C, atau D."
+                          else "Berikan jawaban lengkap dan jelas dalam Bahasa Indonesia."
 
         val model = if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile"
+
         val json = JSONObject().apply {
             put("model", model)
             put("messages", org.json.JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", systemPrompt)
-                })
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", question)
-                })
+                put(JSONObject().apply { put("role", "system"); put("content", systemPrompt) })
+                put(JSONObject().apply { put("role", "user"); put("content", question) })
             })
             put("max_tokens", if (mode == "PG") 10 else 500)
             put("temperature", 0.3)
         }
 
-        val body = json.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("${endpoint.baseUrl}/chat/completions")
             .addHeader("Authorization", "Bearer ${endpoint.key}")
             .addHeader("Content-Type", "application/json")
-            .post(body)
+            .post(json.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
         return try {
             val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-            if (response.isSuccessful && responseBody.isNotEmpty()) {
-                val result = JSONObject(responseBody)
-                var answer = result
-                    .getJSONArray("choices")
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .getString("content")
-                    .trim()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                var answer = JSONObject(body).getJSONArray("choices")
+                    .getJSONObject(0).getJSONObject("message").getString("content").trim()
                 if (mode == "PG") {
                     answer = answer.replace(Regex("[^A-Da-d]"), "")
                     if (answer.isEmpty()) return "?"
@@ -774,13 +690,15 @@ class WinatraKeyboardService : InputMethodService() {
                 }
                 answer
             } else {
-                val errorDetails = responseBody.take(100)
-                "Error: ${response.code} ${errorDetails}"
+                when (response.code) {
+                    429, 503 -> "Error: rate_limit"
+                    401, 403 -> "Error: auth_failed"
+                    else -> "Error: ${response.code}"
+                }
             }
-        } catch (e: Exception) {
-            val message = e.message ?: "timeout"
-            "Error: $message"
-        }
+        } catch (e: java.net.SocketTimeoutException) { "Error: timeout"
+        } catch (e: java.io.IOException) { "Error: network"
+        } catch (e: Exception) { "Error: ${e.message}" }
     }
 
     private fun dp(v: Int) = TypedValue.applyDimension(
