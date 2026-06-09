@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LimitService {
-  static const int DAILY_LIMIT = 15;
+  static const int DAILY_LIMIT = 10;
   static const String PREFS_NAME = "winatra_prefs";
   static const String KEY_REMAINING = "remaining_quota";
   static const String KEY_IS_PREMIUM = "is_premium";
