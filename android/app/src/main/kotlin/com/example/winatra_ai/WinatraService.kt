@@ -37,7 +37,7 @@ class WinatraService : Service() {
         const val KEY_MODE = "mode"
         const val PREF_KEY_API_INDEX = "api_key_index"
         const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
-        const val DEFAULT_DAILY_QUOTA = 15
+        const val DEFAULT_DAILY_QUOTA = 7   // diubah dari 15 menjadi 7
         const val TAG = "WinatraService"
 
         data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
@@ -130,7 +130,6 @@ class WinatraService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        // Hapus listener dengan aman
         clipboardListener?.let {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.removePrimaryClipChangedListener(it)
@@ -350,7 +349,9 @@ class WinatraService : Service() {
                 var answer = JSONObject(body).getJSONArray("choices")
                     .getJSONObject(0).getJSONObject("message").getString("content").trim()
                 if (mode == "PG") {
-                    answer = answer.replace(Regex("[^A-Da-d]"), "").takeIf { it.isNotEmpty() }?.first()?.uppercaseChar() ?: "?"
+                    // Hanya ambil huruf pertama yang valid A/B/C/D (case insensitive)
+                    val firstValid = answer.uppercase().firstOrNull { it in 'A'..'D' }
+                    answer = if (firstValid != null) firstValid.toString() else "?"
                 }
                 answer
             } else {
