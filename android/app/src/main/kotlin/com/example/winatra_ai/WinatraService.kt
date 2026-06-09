@@ -20,6 +20,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.random.Random
 
 class WinatraService : Service() {
 
@@ -35,15 +36,16 @@ class WinatraService : Service() {
         const val ACTION_COPY_ANSWER = "ACTION_COPY_ANSWER"
         const val PREFS_NAME = "winatra_prefs"
         const val KEY_MODE = "mode"
-        const val PREF_KEY_API_INDEX = "api_key_index"
         const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
-        const val DEFAULT_DAILY_QUOTA = 7   // diubah dari 15 menjadi 7
+        const val DEFAULT_DAILY_QUOTA = 7
         const val TAG = "WinatraService"
+        const val DEEPSEEK_WEIGHT = 96   // Bobot untuk DeepSeek (96 dari total 120 = 80%)
 
         data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
 
-        // 24 Groq + 1 DeepSeek = 25 total
+        // Daftar asli endpoint (24 Groq + 1 DeepSeek)
         private val API_ENDPOINTS = listOf(
+            ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek"),
             ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_2", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_3", "https://api.groq.com/openai/v1", "Groq"),
@@ -67,9 +69,15 @@ class WinatraService : Service() {
             ApiEndpoint("BUILD_GROQ_KEY_21", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_22", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_23", "https://api.groq.com/openai/v1", "Groq"),
-            ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq"),
-            ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek")
+            ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq")
         )
+
+        // Daftar berbobot: DeepSeek diulang DEEPSEEK_WEIGHT kali, setiap Groq 1 kali
+        private val WEIGHTED_ENDPOINTS: List<ApiEndpoint> by lazy {
+            val deepseek = API_ENDPOINTS.first { it.type == "DeepSeek" }
+            val groqs = API_ENDPOINTS.filter { it.type == "Groq" }
+            List(DEEPSEEK_WEIGHT) { deepseek } + groqs
+        }
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -82,14 +90,12 @@ class WinatraService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "onCreate called")
         createNotificationChannels()
         setupClipboardListener()
         showPersistentNotification()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand action=${intent?.action}")
         when (intent?.action) {
             ACTION_CHANGE_MODE -> toggleMode()
             ACTION_CLIPBOARD_RESULT -> {
@@ -111,7 +117,7 @@ class WinatraService : Service() {
                 if (answer.isNotEmpty()) {
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
-                    Toast.makeText(this, "Jawaban disalin ke clipboard", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Jawaban disalin", Toast.LENGTH_SHORT).show()
                 }
             }
             "SET_AUTO_SOLVE" -> {
@@ -141,15 +147,11 @@ class WinatraService : Service() {
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(
-                CHANNEL_ID, "Winatra AI Service", NotificationManager.IMPORTANCE_LOW
-            ).apply {
+            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Winatra AI Service", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Winatra AI Shortcut Service"
                 setShowBadge(false)
             })
-            manager.createNotificationChannel(NotificationChannel(
-                RESULT_CHANNEL_ID, "Winatra AI Jawaban", NotificationManager.IMPORTANCE_HIGH
-            ).apply {
+            manager.createNotificationChannel(NotificationChannel(RESULT_CHANNEL_ID, "Winatra AI Jawaban", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Notifikasi hasil jawaban AI"
                 setShowBadge(true)
                 enableVibration(true)
@@ -158,43 +160,29 @@ class WinatraService : Service() {
         }
     }
 
-    private fun getMode() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        .getString(KEY_MODE, "Essay") ?: "Essay"
-
-    private fun setMode(mode: String) {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_MODE, mode).apply()
-    }
-
+    private fun getMode() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_MODE, "Essay") ?: "Essay"
+    private fun setMode(mode: String) = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString(KEY_MODE, mode).apply()
     private fun toggleMode() {
         val current = getMode()
-        val newMode = if (current == "Essay") "PG" else "Essay"
-        setMode(newMode)
+        setMode(if (current == "Essay") "PG" else "Essay")
         showPersistentNotification()
     }
 
     private fun setupClipboardListener() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        autoSolveEnabled = prefs.getBoolean("auto_solve", false)
-
+        autoSolveEnabled = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean("auto_solve", false)
         clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
             if (autoSolveEnabled) {
                 try {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = clipboard.primaryClip
-                    val text = clip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                    val text = (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
                     if (text.isNotEmpty() && text.endsWith("?")) {
-                        val intent = Intent(this, ClipboardActivity::class.java).apply {
+                        startActivity(Intent(this, ClipboardActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        }
-                        startActivity(intent)
+                        })
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Clipboard error: ${e.message}")
-                }
+                } catch (e: Exception) { Log.e(TAG, "Clipboard error", e) }
             }
         }
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.addPrimaryClipChangedListener(clipboardListener)
+        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).addPrimaryClipChangedListener(clipboardListener)
     }
 
     private fun updateAutoSolve(enabled: Boolean) {
@@ -210,43 +198,28 @@ class WinatraService : Service() {
             .setContentText("Mode: $mode | Auto: $autoStatus | Copy teks lalu tekan Jawab")
             .setSmallIcon(android.R.drawable.ic_menu_search)
             .setOngoing(true)
-            .addAction(0, "Ganti Mode", PendingIntent.getService(
-                this, 1, Intent(this, WinatraService::class.java).apply { action = ACTION_CHANGE_MODE },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-            .addAction(0, "Jawab", PendingIntent.getActivity(
-                this, 0, Intent(this, ClipboardActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-            .addAction(android.R.drawable.ic_menu_send, "Tanya", PendingIntent.getActivity(
-                this, 3, Intent(this, ClipboardActivity::class.java).apply { putExtra("mode", "ask") },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .addAction(0, "Ganti Mode", PendingIntent.getService(this, 1, Intent(this, WinatraService::class.java).apply { action = ACTION_CHANGE_MODE }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .addAction(0, "Jawab", PendingIntent.getActivity(this, 0, Intent(this, ClipboardActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .addAction(android.R.drawable.ic_menu_send, "Tanya", PendingIntent.getActivity(this, 3, Intent(this, ClipboardActivity::class.java).apply { putExtra("mode", "ask") }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .build()
         startForeground(NOTIF_ID, notification)
     }
 
     private fun showResultNotification(title: String, body: String, withExplain: Boolean = false, question: String = "", answer: String = "") {
         val builder = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setAutoCancel(true)
-
+            .setContentTitle(title).setContentText(body).setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true)
         if (withExplain && question.isNotEmpty() && answer.isNotEmpty()) {
-            val explainIntent = Intent(this, WinatraService::class.java).apply {
+            builder.addAction(0, "Kenapa?", PendingIntent.getService(this, 2, Intent(this, WinatraService::class.java).apply {
                 action = ACTION_EXPLAIN
                 putExtra("question", question)
                 putExtra("answer", answer)
-            }
-            val explainPending = PendingIntent.getService(this, 2, explainIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            builder.addAction(0, "Kenapa?", explainPending)
+            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         }
-
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(RESULT_NOTIF_ID, builder.build())
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(RESULT_NOTIF_ID, builder.build())
     }
 
-    // ---------- LIMIT & PREMIUM ----------
+    // ---------- LIMIT & PREMIUM (kuota gratis 7) ----------
     private fun checkAndShowLimit(): Boolean {
         val remaining = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getInt("remaining_quota", -1)
         if (remaining <= 0 && remaining != -1) {
@@ -268,7 +241,7 @@ class WinatraService : Service() {
         FirebaseAuth.getInstance().currentUser?.let { user ->
             try {
                 FirebaseFirestore.getInstance().collection("users").document(user.uid).update("remainingQuota", quota).await()
-            } catch (e: Exception) { Log.e(TAG, "Firestore sync failed: ${e.message}") }
+            } catch (e: Exception) { Log.e(TAG, "Firestore sync failed", e) }
         }
     }
 
@@ -276,9 +249,8 @@ class WinatraService : Service() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val current = prefs.getInt("remaining_quota", 0)
         if (current > 0) {
-            val newVal = current - 1
-            prefs.edit().putInt("remaining_quota", newVal).apply()
-            scope.launch { syncRemainingQuotaToFirestore(newVal) }
+            prefs.edit().putInt("remaining_quota", current - 1).apply()
+            scope.launch { syncRemainingQuotaToFirestore(current - 1) }
         }
     }
 
@@ -290,39 +262,33 @@ class WinatraService : Service() {
             val isPremiumFlag = doc.getBoolean("isPremium") ?: false
             if (!isPremiumFlag) return@withContext false
             val expiry = doc.getTimestamp("premiumExpiry")?.toDate()
-            if (expiry == null) return@withContext true
-            expiry.after(Date())
+            expiry == null || expiry.after(Date())
         } catch (e: Exception) { false }
     }
 
-    // ---------- API ROUND-ROBIN ----------
-    private fun getStoredApiIndex(): Int {
-        val idx = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getInt(PREF_KEY_API_INDEX, 0)
-        return idx.coerceAtLeast(0) % API_ENDPOINTS.size
-    }
-
-    private fun saveApiIndex(index: Int) {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
-    }
-
+    // ---------- WEIGHTED RANDOM API FALLBACK ----------
     private suspend fun callAIWithFallback(question: String, mode: String): String {
-        val startIdx = getStoredApiIndex()
-        for (i in API_ENDPOINTS.indices) {
-            val idx = (startIdx + i) % API_ENDPOINTS.size
-            val endpoint = API_ENDPOINTS[idx]
+        // Salin daftar berbobot untuk request ini (akan diubah jika ada endpoint gagal)
+        val candidates = WEIGHTED_ENDPOINTS.toMutableList()
+        while (candidates.isNotEmpty()) {
+            // Pilih endpoint secara acak (dengan bobot) dari daftar kandidat
+            val idx = Random.nextInt(candidates.size)
+            val endpoint = candidates[idx]
             val result = performApiRequest(endpoint, question, mode)
             if (result != null && !result.startsWith("Error:")) {
-                saveApiIndex(idx + 1)
                 return result
+            } else {
+                // Hapus endpoint yang gagal untuk request ini (agar tidak dicoba lagi)
+                candidates.removeAt(idx)
+                Log.w(TAG, "${endpoint.type} failed (${result?.take(20)}), remaining: ${candidates.size}")
             }
         }
-        saveApiIndex(startIdx + 1)
         return "Error: All API keys failed."
     }
 
     private suspend fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
         val systemPrompt = if (mode == "PG") "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
-                          else "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+        else "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
         val model = if (endpoint.type == "DeepSeek") "deepseek-chat" else "llama-3.3-70b-versatile"
 
         val json = JSONObject().apply {
@@ -349,7 +315,6 @@ class WinatraService : Service() {
                 var answer = JSONObject(body).getJSONArray("choices")
                     .getJSONObject(0).getJSONObject("message").getString("content").trim()
                 if (mode == "PG") {
-                    // Hanya ambil huruf pertama yang valid A/B/C/D (case insensitive)
                     val firstValid = answer.uppercase().firstOrNull { it in 'A'..'D' }
                     answer = if (firstValid != null) firstValid.toString() else "?"
                 }
@@ -366,15 +331,17 @@ class WinatraService : Service() {
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
+    // ---------- EXPLANATION (sama dengan weighted random) ----------
     private suspend fun callExplanationWithFallback(question: String, answer: String): String {
-        val startIdx = getStoredApiIndex()
-        for (i in API_ENDPOINTS.indices) {
-            val idx = (startIdx + i) % API_ENDPOINTS.size
-            val endpoint = API_ENDPOINTS[idx]
+        val candidates = WEIGHTED_ENDPOINTS.toMutableList()
+        while (candidates.isNotEmpty()) {
+            val idx = Random.nextInt(candidates.size)
+            val endpoint = candidates[idx]
             val result = performExplanationRequest(endpoint, question, answer)
             if (result != null && !result.startsWith("Error:")) {
-                saveApiIndex(idx + 1)
                 return result
+            } else {
+                candidates.removeAt(idx)
             }
         }
         return "Error: All API keys failed for explanation."
@@ -406,6 +373,7 @@ class WinatraService : Service() {
         } catch (e: Exception) { "Error: ${e.message}" }
     }
 
+    // ---------- PROSES UTAMA ----------
     private fun processClipboardResult(question: String, modeType: String = "answer") {
         if (FirebaseAuth.getInstance().currentUser == null) {
             showResultNotification("Winatra AI", "Silakan login terlebih dahulu.")
@@ -440,8 +408,8 @@ class WinatraService : Service() {
                     if (getMode() == "PG") {
                         showResultNotification("Jawaban PG", "Jawaban: $answer", true, question, answer)
                     } else {
-                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
+                        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                            .setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
                         showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
                     }
                 }
@@ -456,13 +424,11 @@ class WinatraService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(answer))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setAutoCancel(true)
-            .addAction(0, "Salin", PendingIntent.getService(
-                this, 4, Intent(this, WinatraService::class.java).apply {
-                    action = ACTION_COPY_ANSWER
-                    putExtra("answer", answer)
-                }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(RESULT_NOTIF_ID + 1, builder.build())
+            .addAction(0, "Salin", PendingIntent.getService(this, 4, Intent(this, WinatraService::class.java).apply {
+                action = ACTION_COPY_ANSWER
+                putExtra("answer", answer)
+            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(RESULT_NOTIF_ID + 1, builder.build())
     }
 
     private suspend fun handleExplain(question: String, answer: String) {

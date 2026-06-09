@@ -26,6 +26,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.random.Random
 
 class WinatraKeyboardService : InputMethodService() {
 
@@ -57,14 +58,15 @@ class WinatraKeyboardService : InputMethodService() {
     companion object {
         const val TAG = "WinatraKeyboardService"
         const val PREFS_NAME = "winatra_prefs"
-        const val PREF_KEY_API_INDEX = "api_key_index"
         const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
-        const val DEFAULT_DAILY_QUOTA = 15
+        const val DEFAULT_DAILY_QUOTA = 7   // Diubah dari 15 menjadi 7
+        const val DEEPSEEK_WEIGHT = 96      // Bobot DeepSeek (96 dari total 120 = 80%)
 
         data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
 
-        // 24 Groq keys + 1 DeepSeek = 25 total
+        // Daftar asli endpoint (24 Groq + 1 DeepSeek)
         private val API_ENDPOINTS = listOf(
+            ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek"),
             ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_2", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_3", "https://api.groq.com/openai/v1", "Groq"),
@@ -88,9 +90,15 @@ class WinatraKeyboardService : InputMethodService() {
             ApiEndpoint("BUILD_GROQ_KEY_21", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_22", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_23", "https://api.groq.com/openai/v1", "Groq"),
-            ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq"),
-            ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek")
+            ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq")
         )
+
+        // Daftar berbobot: DeepSeek diulang DEEPSEEK_WEIGHT kali, setiap Groq 1 kali
+        private val WEIGHTED_ENDPOINTS: List<ApiEndpoint> by lazy {
+            val deepseek = API_ENDPOINTS.first { it.type == "DeepSeek" }
+            val groqs = API_ENDPOINTS.filter { it.type == "Groq" }
+            List(DEEPSEEK_WEIGHT) { deepseek } + groqs
+        }
 
         val ROWS_LOWER = arrayOf(
             arrayOf("q","w","e","r","t","y","u","i","o","p"),
@@ -534,7 +542,6 @@ class WinatraKeyboardService : InputMethodService() {
             .putInt("remaining_quota", DEFAULT_DAILY_QUOTA)
             .apply()
         Log.d(TAG, "Reset harian: kuota menjadi $DEFAULT_DAILY_QUOTA")
-        // Sync ke Firestore
         FirebaseAuth.getInstance().currentUser?.let { user ->
             try {
                 FirebaseFirestore.getInstance().collection("users").document(user.uid)
@@ -589,7 +596,6 @@ class WinatraKeyboardService : InputMethodService() {
     }
 
     private fun handleAIQuery() {
-        // Cek login
         if (FirebaseAuth.getInstance().currentUser == null) {
             showStatus("Silakan login terlebih dahulu.")
             return
@@ -628,37 +634,30 @@ class WinatraKeyboardService : InputMethodService() {
         }
     }
 
-    // ---------- API ROUND-ROBIN ----------
-    private fun getStoredApiIndex(): Int {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(PREF_KEY_API_INDEX, 0).coerceAtLeast(0) % API_ENDPOINTS.size
-    }
-
-    private fun saveApiIndex(index: Int) {
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
-    }
-
-    private fun callAIWithFallback(question: String, mode: String): String {
-        val startIdx = getStoredApiIndex()
-        for (i in API_ENDPOINTS.indices) {
-            val idx = (startIdx + i) % API_ENDPOINTS.size
-            val endpoint = API_ENDPOINTS[idx]
+    // ---------- WEIGHTED RANDOM API FALLBACK ----------
+    private suspend fun callAIWithFallback(question: String, mode: String): String {
+        // Salin daftar berbobot untuk request ini (akan diubah jika ada endpoint gagal)
+        val candidates = WEIGHTED_ENDPOINTS.toMutableList()
+        while (candidates.isNotEmpty()) {
+            // Pilih endpoint secara acak (dengan bobot) dari daftar kandidat
+            val idx = Random.nextInt(candidates.size)
+            val endpoint = candidates[idx]
             val result = performApiRequest(endpoint, question, mode)
             if (result != null && !result.startsWith("Error:")) {
-                saveApiIndex(idx + 1)
                 return result
+            } else {
+                // Hapus endpoint yang gagal untuk request ini (agar tidak dicoba lagi)
+                candidates.removeAt(idx)
+                Log.w(TAG, "${endpoint.type} failed (${result?.take(20)}), remaining: ${candidates.size}")
             }
         }
-        saveApiIndex(startIdx + 1)
         return "Error: All API keys failed."
     }
 
-    private fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
-        val systemPrompt = if (mode == "PG") "Jawab HANYA dengan satu huruf: A, B, C, atau D."
-                          else "Berikan jawaban lengkap dan jelas dalam Bahasa Indonesia."
-
-        val model = if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile"
+    private suspend fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
+        val systemPrompt = if (mode == "PG") "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
+                          else "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+        val model = if (endpoint.type == "DeepSeek") "deepseek-chat" else "llama-3.3-70b-versatile"
 
         val json = JSONObject().apply {
             put("model", model)
@@ -684,9 +683,8 @@ class WinatraKeyboardService : InputMethodService() {
                 var answer = JSONObject(body).getJSONArray("choices")
                     .getJSONObject(0).getJSONObject("message").getString("content").trim()
                 if (mode == "PG") {
-                    answer = answer.replace(Regex("[^A-Da-d]"), "")
-                    if (answer.isEmpty()) return "?"
-                    answer = answer[0].uppercaseChar().toString()
+                    val firstValid = answer.uppercase().firstOrNull { it in 'A'..'D' }
+                    answer = if (firstValid != null) firstValid.toString() else "?"
                 }
                 answer
             } else {
