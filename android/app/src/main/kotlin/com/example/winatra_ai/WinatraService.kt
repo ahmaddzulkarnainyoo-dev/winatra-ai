@@ -73,7 +73,10 @@ class WinatraService : Service() {
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     private var autoSolveEnabled = false
     private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
 
@@ -94,10 +97,9 @@ class WinatraService : Service() {
                 toggleMode()
             }
             ACTION_CLIPBOARD_RESULT -> {
-                // Cek login sebelum memproses
                 if (FirebaseAuth.getInstance().currentUser == null) {
                     Log.w(TAG, "User not logged in, ignoring ACTION_CLIPBOARD_RESULT")
-                    showResultNotification("Winatra AI", "Silakan login terlebih dahulu untuk menggunakan fitur notifikasi.")
+                    showResultNotification("Winatra AI", "Silakan login terlebih dahulu.")
                     return START_STICKY
                 }
                 val question = intent.getStringExtra(ClipboardActivity.EXTRA_QUESTION) ?: ""
@@ -322,7 +324,7 @@ class WinatraService : Service() {
         Log.d(TAG, "Result notification shown: $title")
     }
 
-    // ========== LIMIT & PREMIUM ==========
+    // ---------- LIMIT & PREMIUM ----------
     private fun checkAndShowLimit(): Boolean {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val remaining = prefs.getInt("remaining_quota", -1)
@@ -331,7 +333,7 @@ class WinatraService : Service() {
         if (remaining <= 0) {
             showResultNotification(
                 "Winatra AI",
-                "Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]. Admin akan mengaktifkan premium setelah konfirmasi."
+                "Maaf, kuota harian Anda habis. Silakan hubungi admin di WhatsApp [NOMOR_ADMIN] dan kirimkan bukti pembayaran. Pilih paket langganan:\n• 5.000/hari\n• 15.000/minggu\n• 30.000/bulan\nTransfer ke rekening [REKENING]."
             )
             return false
         }
@@ -395,16 +397,179 @@ class WinatraService : Service() {
             }
         }
     }
-    // ========== END LIMIT & PREMIUM ==========
 
+    // ---------- API FALLBACK (Round-Robin) ----------
+    private fun getStoredApiIndex(): Int {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val idx = prefs.getInt(PREF_KEY_API_INDEX, 0)
+        return idx.coerceAtLeast(0) % API_ENDPOINTS.size
+    }
+
+    private fun saveApiIndex(index: Int) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
+    }
+
+    private suspend fun callAIWithFallback(question: String, mode: String): String {
+        val startIdx = getStoredApiIndex()
+        for (i in API_ENDPOINTS.indices) {
+            val idx = (startIdx + i) % API_ENDPOINTS.size
+            val endpoint = API_ENDPOINTS[idx]
+            Log.d(TAG, "Trying ${endpoint.type} endpoint (index $idx)")
+            val result = performApiRequest(endpoint, question, mode)
+            if (result != null && !result.startsWith("Error:")) {
+                saveApiIndex(idx + 1) // pindah ke next untuk next request
+                return result
+            } else {
+                Log.w(TAG, "Failed ${endpoint.type}: $result")
+            }
+        }
+        saveApiIndex(startIdx + 1)
+        return "Error: All API keys failed. Please try again later."
+    }
+
+    private suspend fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
+        val systemPrompt = if (mode == "PG")
+            "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
+        else
+            "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+
+        val model = if (endpoint.type == "DeepSeek") "deepseek-chat" else "llama-3.3-70b-versatile"
+        val url = "${endpoint.baseUrl}/chat/completions"
+
+        val json = JSONObject().apply {
+            put("model", model)
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", question)
+                })
+            })
+            put("max_tokens", if (mode == "PG") 10 else 500)
+            put("temperature", 0.3)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer ${endpoint.key}")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        return try {
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val jsonResp = JSONObject(responseBody)
+                var answer = jsonResp
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+                if (mode == "PG") {
+                    answer = answer.replace(Regex("[^A-Da-d]"), "")
+                    if (answer.isEmpty()) return "?"
+                    answer = answer[0].uppercaseChar().toString()
+                }
+                answer
+            } else {
+                // Tangani berbagai kode error
+                when (response.code) {
+                    429, 503 -> {
+                        Log.w(TAG, "Rate limit or service unavailable (${response.code}) for ${endpoint.type}")
+                        "Error: rate_limit"
+                    }
+                    401, 403 -> "Error: auth_failed"
+                    else -> "Error: ${response.code}"
+                }
+            }
+        } catch (e: java.net.SocketTimeoutException) {
+            "Error: timeout"
+        } catch (e: java.io.IOException) {
+            "Error: network"
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    // ---------- EXPLANATION ----------
+    private suspend fun callExplanationWithFallback(question: String, answer: String): String {
+        val startIdx = getStoredApiIndex()
+        for (i in API_ENDPOINTS.indices) {
+            val idx = (startIdx + i) % API_ENDPOINTS.size
+            val endpoint = API_ENDPOINTS[idx]
+            val result = performExplanationRequest(endpoint, question, answer)
+            if (result != null && !result.startsWith("Error:")) {
+                saveApiIndex(idx + 1)
+                return result
+            }
+        }
+        return "Error: All API keys failed for explanation."
+    }
+
+    private suspend fun performExplanationRequest(endpoint: ApiEndpoint, question: String, answer: String): String? {
+        val systemPrompt = "Jelaskan secara singkat dan jelas mengapa jawaban yang benar untuk pertanyaan berikut adalah $answer. Berikan alasan yang logis dalam Bahasa Indonesia."
+        val userContent = "Pertanyaan: $question"
+
+        val model = if (endpoint.type == "DeepSeek") "deepseek-chat" else "llama-3.3-70b-versatile"
+        val url = "${endpoint.baseUrl}/chat/completions"
+
+        val json = JSONObject().apply {
+            put("model", model)
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", systemPrompt)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", userContent)
+                })
+            })
+            put("max_tokens", 300)
+            put("temperature", 0.5)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer ${endpoint.key}")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        return try {
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                JSONObject(responseBody)
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+                    .trim()
+            } else {
+                "Error: ${response.code}"
+            }
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    // ---------- PROCESS CLIPBOARD ----------
     private fun processClipboardResult(question: String, modeType: String = "answer") {
         val mode = getMode()
         Log.d(TAG, "processClipboardResult: question length=${question.length}, mode=$mode, modeType=$modeType")
 
-        // PENTING: Cek login sebelum memproses apapun
         if (FirebaseAuth.getInstance().currentUser == null) {
-            Log.w(TAG, "User not logged in, ignoring clipboard request")
-            showResultNotification("Winatra AI", "Silakan login terlebih dahulu untuk menggunakan fitur notifikasi.")
+            Log.w(TAG, "User not logged in")
+            showResultNotification("Winatra AI", "Silakan login terlebih dahulu.")
             return
         }
 
@@ -414,24 +579,24 @@ class WinatraService : Service() {
             return
         }
 
-        showResultNotification("Winatra AI", "⏳ Memproses pertanyaan...")
+        showResultNotification("Winatra AI", "⏳ Memproses...")
 
         scope.launch {
             resetDailyQuotaIfNeeded()
             val isPremium = isUserPremium()
-            if (!isPremium) {
-                if (!checkAndShowLimit()) return@launch
-            } else {
-                Log.d(TAG, "User is premium, skipping limit check")
-            }
+            if (!isPremium && !checkAndShowLimit()) return@launch
 
-            val answer = withContext(Dispatchers.IO) {
-                callAIWithFallback(question, if (modeType == "discussion") "Essay" else mode)
-            }
+            val answer = callAIWithFallback(question, if (modeType == "discussion") "Essay" else mode)
 
             withContext(Dispatchers.Main) {
                 if (answer.startsWith("Error:")) {
-                    val friendlyMsg = getUserFriendlyErrorMessage(answer)
+                    val friendlyMsg = when {
+                        answer.contains("rate_limit") -> "Layanan sedang padat, coba lagi nanti."
+                        answer.contains("auth_failed") -> "Ada masalah kunci API, laporkan ke pengembang."
+                        answer.contains("timeout") -> "Koneksi lambat, coba lagi dengan sinyal lebih baik."
+                        answer.contains("network") -> "Tidak ada koneksi internet. Periksa jaringan Anda."
+                        else -> "Maaf, layanan AI sedang sibuk. Coba lagi nanti."
+                    }
                     showResultNotification("Winatra AI", friendlyMsg)
                     return@withContext
                 }
@@ -451,17 +616,6 @@ class WinatraService : Service() {
                     }
                 }
             }
-        }
-    }
-
-    private fun getUserFriendlyErrorMessage(rawError: String): String {
-        return when {
-            rawError.contains("All API keys failed") -> "Layanan AI sedang sangat sibuk. Coba lagi nanti. Jika masalah berlanjut, hubungi admin."
-            rawError.contains("429") -> "Trafik padat, coba lagi sebentar."
-            rawError.contains("401") || rawError.contains("403") -> "Ada masalah teknis. Tim kami sedang memperbaiki."
-            rawError.contains("timeout") -> "Koneksi lambat, coba lagi dengan sinyal lebih baik."
-            rawError.contains("network") -> "Tidak ada koneksi internet. Periksa jaringan Anda."
-            else -> "Maaf, terjadi gangguan. Silakan coba beberapa saat lagi."
         }
     }
 
@@ -489,162 +643,13 @@ class WinatraService : Service() {
     private suspend fun handleExplain(question: String, answer: String) {
         Log.d(TAG, "handleExplain called")
         showResultNotification("Winatra AI", "📖 Menyiapkan penjelasan...")
-        val explanation = withContext(Dispatchers.IO) {
-            callExplanationWithFallback(question, answer)
-        }
+        val explanation = callExplanationWithFallback(question, answer)
         withContext(Dispatchers.Main) {
             if (explanation.startsWith("Error:")) {
-                val friendlyMsg = getUserFriendlyErrorMessage(explanation)
-                showResultNotification("Penjelasan", friendlyMsg)
+                showResultNotification("Penjelasan", "Maaf, penjelasan tidak tersedia saat ini.")
             } else {
                 showResultNotification("Penjelasan", explanation)
             }
-        }
-    }
-
-    // ========== API ROUND-ROBIN ==========
-    private fun getStoredApiIndex(): Int {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(PREF_KEY_API_INDEX, 0).coerceAtLeast(0) % API_ENDPOINTS.size
-    }
-
-    private fun saveApiIndex(index: Int) {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putInt(PREF_KEY_API_INDEX, index % API_ENDPOINTS.size).apply()
-    }
-
-    private suspend fun callAIWithFallback(question: String, mode: String): String {
-        val startIndex = getStoredApiIndex()
-        for (i in API_ENDPOINTS.indices) {
-            val idx = (startIndex + i) % API_ENDPOINTS.size
-            val endpoint = API_ENDPOINTS[idx]
-            val result = performApiRequest(endpoint, question, mode)
-            if (result != null && !result.startsWith("Error:")) {
-                saveApiIndex((idx + 1) % API_ENDPOINTS.size)
-                return result
-            } else {
-                Log.w(TAG, "API endpoint failed: ${endpoint.type} ${endpoint.key.take(12)}... error=$result")
-            }
-        }
-        saveApiIndex((startIndex + 1) % API_ENDPOINTS.size)
-        return "Error: All API keys failed."
-    }
-
-    private suspend fun performApiRequest(endpoint: ApiEndpoint, question: String, mode: String): String? {
-        val systemPrompt = if (mode == "PG")
-            "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
-        else
-            "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
-
-        val model = if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile"
-
-        val json = JSONObject().apply {
-            put("model", model)
-            put("messages", org.json.JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", systemPrompt)
-                })
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", question)
-                })
-            })
-            put("max_tokens", if (mode == "PG") 10 else 500)
-            put("temperature", 0.3)
-        }
-
-        val body = json.toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder()
-            .url("${endpoint.baseUrl}/chat/completions")
-            .addHeader("Authorization", "Bearer ${endpoint.key}")
-            .addHeader("Content-Type", "application/json")
-            .post(body)
-            .build()
-
-        return try {
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-            if (response.isSuccessful && responseBody.isNotEmpty()) {
-                val result = JSONObject(responseBody)
-                var answer = result
-                    .getJSONArray("choices")
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .getString("content")
-                    .trim()
-                if (mode == "PG") {
-                    answer = answer.replace(Regex("[^A-Da-d]"), "")
-                    if (answer.isEmpty()) return "?"
-                    answer = answer[0].uppercaseChar().toString()
-                }
-                answer
-            } else {
-                "Error: ${response.code}"
-            }
-        } catch (e: Exception) {
-            "Error: ${e.message}"
-        }
-    }
-
-    private suspend fun callExplanationWithFallback(question: String, answer: String): String {
-        val startIndex = getStoredApiIndex()
-        for (i in API_ENDPOINTS.indices) {
-            val idx = (startIndex + i) % API_ENDPOINTS.size
-            val endpoint = API_ENDPOINTS[idx]
-            val result = performExplanationRequest(endpoint, question, answer)
-            if (result != null && !result.startsWith("Error:")) {
-                saveApiIndex((idx + 1) % API_ENDPOINTS.size)
-                return result
-            }
-        }
-        return "Error: All API keys failed for explanation."
-    }
-
-    private suspend fun performExplanationRequest(endpoint: ApiEndpoint, question: String, answer: String): String? {
-        val systemPrompt = "Jelaskan secara singkat dan jelas mengapa jawaban yang benar untuk pertanyaan berikut adalah $answer. Berikan alasan yang logis dalam Bahasa Indonesia."
-        val userContent = "Pertanyaan: $question"
-
-        val json = JSONObject().apply {
-            put("model", if (endpoint.type == "DeepSeek") "deepseek-v4-flash" else "llama-3.3-70b-versatile")
-            put("messages", org.json.JSONArray().apply {
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", systemPrompt)
-                })
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", userContent)
-                })
-            })
-            put("max_tokens", 300)
-            put("temperature", 0.5)
-        }
-
-        val body = json.toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder()
-            .url("${endpoint.baseUrl}/chat/completions")
-            .addHeader("Authorization", "Bearer ${endpoint.key}")
-            .addHeader("Content-Type", "application/json")
-            .post(body)
-            .build()
-
-        return try {
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-            if (response.isSuccessful && responseBody.isNotEmpty()) {
-                val result = JSONObject(responseBody)
-                result
-                    .getJSONArray("choices")
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .getString("content")
-                    .trim()
-            } else {
-                "Error: ${response.code}"
-            }
-        } catch (e: Exception) {
-            "Error: ${e.message}"
         }
     }
 }

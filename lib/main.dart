@@ -13,6 +13,8 @@ import 'screens/notification_mode_screen.dart';
 import 'screens/keyboard_mode_screen.dart';
 import 'screens/sidebar_drawer.dart';
 import 'screens/support_screen.dart';
+import 'screens/offline_ai_screen.dart';
+import 'screens/about_screen.dart';
 import 'services/limit_service.dart'; // <-- Tambah import ini
 
 const platform = MethodChannel('winatra/service');
@@ -174,8 +176,9 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       const HomeScreen(),
       NotificationModeScreen(currentMode: 'Essay'),
       const KeyboardModeScreen(),
+      const OfflineAIScreen(),
       const SupportScreen(),
-      const _AboutScreen(),
+      const AboutScreen(),
     ];
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await checkForUpdate(context);
@@ -214,36 +217,6 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       drawer: SidebarDrawer(
         selectedIndex: _selectedIndex,
         onItemTapped: _onItemTapped,
-      ),
-    );
-  }
-}
-
-class _AboutScreen extends StatelessWidget {
-  const _AboutScreen({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0D0D1A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0D0D1A),
-        title: const Text('Tentang Winatra AI', style: TextStyle(color: Color(0xFF9B7EFF))),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Color(0xFF9B7EFF)),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text('Winatra AI', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 22, fontWeight: FontWeight.bold)),
-            SizedBox(height: 12),
-            Text('AI Shortcut untuk pelajar, pekerja, dan kreator Indonesia. Gratis selamanya.', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 14, height: 1.6)),
-            SizedBox(height: 20),
-            Text('Beta v0.1.0', style: TextStyle(color: Color(0xFF666699), fontSize: 12)),
-          ],
-        ),
       ),
     );
   }

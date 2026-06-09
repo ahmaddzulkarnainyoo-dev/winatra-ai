@@ -7,8 +7,8 @@ plugins {
 
 android {
     namespace = "com.example.winatra_ai"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 36  // Diupgrade ke 36 karena awesome_notifications membutuhkan
+    ndkVersion = "27.0.12077973"  // NDK version yang diminta oleh banyak plugin
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,7 +22,7 @@ android {
     defaultConfig {
         applicationId = "com.example.winatra_ai"
         minSdk = 24
-        targetSdk = 33
+        targetSdk = 36  // Sesuaikan dengan compileSdk
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -42,7 +42,7 @@ flutter {
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))  // BOM terbaru
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
 }
