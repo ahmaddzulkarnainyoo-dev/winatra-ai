@@ -37,7 +37,7 @@ class WinatraService : Service() {
         const val PREFS_NAME = "winatra_prefs"
         const val KEY_MODE = "mode"
         const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
-        const val DEFAULT_DAILY_QUOTA = 7
+        const val DEFAULT_DAILY_QUOTA = 8
         const val TAG = "WinatraService"
         const val DEEPSEEK_WEIGHT = 96   // Bobot untuk DeepSeek (96 dari total 120 = 80%)
 
