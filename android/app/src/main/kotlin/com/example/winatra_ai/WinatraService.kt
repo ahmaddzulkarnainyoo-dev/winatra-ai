@@ -42,7 +42,7 @@ class WinatraService : Service() {
 
         data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
 
-        // 24 Groq keys + 1 DeepSeek = 25 total
+        // 24 Groq + 1 DeepSeek = 25 total
         private val API_ENDPOINTS = listOf(
             ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
             ApiEndpoint("BUILD_GROQ_KEY_2", "https://api.groq.com/openai/v1", "Groq"),
@@ -111,7 +111,7 @@ class WinatraService : Service() {
                 if (answer.isNotEmpty()) {
                     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
-                    Toast.makeText(this, "Jawaban disalin", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Jawaban disalin ke clipboard", Toast.LENGTH_SHORT).show()
                 }
             }
             "SET_AUTO_SOLVE" -> {
@@ -130,9 +130,10 @@ class WinatraService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        // Hapus listener dengan aman
         clipboardListener?.let {
-            getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                .removePrimaryClipChangedListener(it)
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.removePrimaryClipChangedListener(it)
         }
         scope.cancel()
         super.onDestroy()
@@ -179,20 +180,22 @@ class WinatraService : Service() {
         clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
             if (autoSolveEnabled) {
                 try {
-                    val clip = (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = clipboard.primaryClip
                     val text = clip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
                     if (text.isNotEmpty() && text.endsWith("?")) {
-                        startActivity(Intent(this@WinatraService, ClipboardActivity::class.java).apply {
+                        val intent = Intent(this, ClipboardActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        })
+                        }
+                        startActivity(intent)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Clipboard error: ${e.message}")
                 }
             }
         }
-        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-            .addPrimaryClipChangedListener(clipboardListener)
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.addPrimaryClipChangedListener(clipboardListener)
     }
 
     private fun updateAutoSolve(enabled: Boolean) {
@@ -223,17 +226,25 @@ class WinatraService : Service() {
 
     private fun showResultNotification(title: String, body: String, withExplain: Boolean = false, question: String = "", answer: String = "") {
         val builder = NotificationCompat.Builder(this, RESULT_CHANNEL_ID)
-            .setContentTitle(title).setContentText(body).setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setSmallIcon(android.R.drawable.ic_dialog_info).setAutoCancel(true)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setAutoCancel(true)
+
         if (withExplain && question.isNotEmpty() && answer.isNotEmpty()) {
-            builder.addAction(0, "Kenapa?", PendingIntent.getService(
-                this, 2, Intent(this, WinatraService::class.java).apply {
-                    action = ACTION_EXPLAIN
-                    putExtra("question", question)
-                    putExtra("answer", answer)
-                }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            val explainIntent = Intent(this, WinatraService::class.java).apply {
+                action = ACTION_EXPLAIN
+                putExtra("question", question)
+                putExtra("answer", answer)
+            }
+            val explainPending = PendingIntent.getService(this, 2, explainIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.addAction(0, "Kenapa?", explainPending)
         }
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(RESULT_NOTIF_ID, builder.build())
+
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(RESULT_NOTIF_ID, builder.build())
     }
 
     // ---------- LIMIT & PREMIUM ----------
@@ -428,8 +439,8 @@ class WinatraService : Service() {
                     if (getMode() == "PG") {
                         showResultNotification("Jawaban PG", "Jawaban: $answer", true, question, answer)
                     } else {
-                        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                            .setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
                         showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
                     }
                 }
@@ -449,7 +460,8 @@ class WinatraService : Service() {
                     action = ACTION_COPY_ANSWER
                     putExtra("answer", answer)
                 }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(RESULT_NOTIF_ID + 1, builder.build())
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(RESULT_NOTIF_ID + 1, builder.build())
     }
 
     private suspend fun handleExplain(question: String, answer: String) {
