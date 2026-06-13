@@ -32,6 +32,7 @@ class WinatraService : Service() {
         const val ACTION_ANSWER = "ACTION_ANSWER"
         const val ACTION_CHANGE_MODE = "ACTION_CHANGE_MODE"
         const val ACTION_CLIPBOARD_RESULT = "CLIPBOARD_RESULT"
+        const val ACTION_ACCESSIBILITY_RESULT = "ACCESSIBILITY_RESULT"
         const val ACTION_EXPLAIN = "ACTION_EXPLAIN"
         const val ACTION_COPY_ANSWER = "ACTION_COPY_ANSWER"
         const val PREFS_NAME = "winatra_prefs"
@@ -119,6 +120,10 @@ class WinatraService : Service() {
                     clipboard.setPrimaryClip(android.content.ClipData.newPlainText("answer", answer))
                     Toast.makeText(this, "Jawaban disalin", Toast.LENGTH_SHORT).show()
                 }
+            }
+            ACTION_ACCESSIBILITY_RESULT -> {
+                val text = intent.getStringExtra("accessibility_text") ?: ""
+                processAccessibilityText(text)
             }
             "SET_AUTO_SOLVE" -> {
                 updateAutoSolve(intent.getBooleanExtra("enabled", false))
@@ -437,6 +442,39 @@ class WinatraService : Service() {
                         showResultNotification("Jawaban Essay", "Jawaban disalin ke clipboard!")
                     }
                 }
+            }
+        }
+    }
+
+    private fun processAccessibilityText(text: String) {
+        if (FirebaseAuth.getInstance().currentUser == null) {
+            showResultNotification("Winatra AI", "Silakan login terlebih dahulu.")
+            return
+        }
+        if (text.isBlank()) {
+            showResultNotification("Winatra AI", "Tidak ada teks yang dapat dibaca.")
+            return
+        }
+        showResultNotification("Winatra AI", "⏳ Memproses teks aksesibilitas...")
+        scope.launch {
+            resetDailyQuotaIfNeeded()
+            val isPremium = isUserPremium()
+            if (!isPremium && !checkAndShowLimit()) return@launch
+            val answer = callAIWithFallback(text, getMode())
+            withContext(Dispatchers.Main) {
+                if (answer.startsWith("Error:")) {
+                    val msg = when {
+                        answer.contains("rate_limit") -> "Layanan padat, coba lagi nanti."
+                        answer.contains("auth_failed") -> "Masalah kunci API, laporkan ke pengembang."
+                        answer.contains("timeout") -> "Koneksi lambat, coba lagi."
+                        answer.contains("network") -> "Tidak ada koneksi internet."
+                        else -> "Layanan sibuk, coba lagi nanti."
+                    }
+                    showResultNotification("Winatra AI", msg)
+                    return@withContext
+                }
+                if (!isPremium) decrementRemainingQuota()
+                showResultNotification("Jawaban Asisten Belajar", answer)
             }
         }
     }
