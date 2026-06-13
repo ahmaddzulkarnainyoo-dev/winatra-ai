@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
@@ -14,6 +15,7 @@ import 'screens/keyboard_mode_screen.dart';
 import 'screens/sidebar_drawer.dart';
 import 'screens/support_screen.dart';
 import 'screens/offline_ai_screen.dart';
+import 'screens/accessibility_settings_screen.dart';
 import 'screens/about_screen.dart';
 import 'services/limit_service.dart'; // <-- Tambah import ini
 
@@ -22,6 +24,19 @@ const platform = MethodChannel('winatra/service');
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  AwesomeNotifications().initialize(
+    null,
+    [
+      NotificationChannel(
+        channelKey: 'basic_channel',
+        channelName: 'Winatra AI Notifications',
+        channelDescription: 'Notifikasi jawaban dan asisten belajar',
+        defaultColor: const Color(0xFF6B4EFF),
+        importance: NotificationImportance.High,
+        channelShowBadge: true,
+      ),
+    ],
+  );
 
   runApp(const MyApp(home: SplashScreen()));
 }
@@ -176,6 +191,7 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       const HomeScreen(),
       NotificationModeScreen(currentMode: 'Essay'),
       const KeyboardModeScreen(),
+      const AccessibilitySettingsScreen(),
       const OfflineAIScreen(),
       const SupportScreen(),
       const AboutScreen(),
