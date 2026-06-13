@@ -1,20 +1,17 @@
 ﻿package com.example.winatra_ai
 
-import android.app.*
-import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.ColorStateList
 import android.inputmethodservice.InputMethodService
-import android.os.Build
-import android.os.IBinder
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
-import android.view.inputmethod.InputConnection
 import android.widget.*
-import androidx.core.app.NotificationCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.*
@@ -60,11 +57,10 @@ class WinatraKeyboardService : InputMethodService() {
         const val PREFS_NAME = "winatra_prefs"
         const val PREF_KEY_LAST_QUOTA_RESET = "last_quota_reset"
         const val DEFAULT_DAILY_QUOTA = 8
-        const val DEEPSEEK_WEIGHT = 96      // Bobot DeepSeek (96 dari total 120 = 80%)
+        const val DEEPSEEK_WEIGHT = 96
 
         data class ApiEndpoint(val key: String, val baseUrl: String, val type: String)
 
-        // Daftar asli endpoint (24 Groq + 1 DeepSeek)
         private val API_ENDPOINTS = listOf(
             ApiEndpoint("BUILD_DEEPSEEK_KEY", "https://api.deepseek.com/v1", "DeepSeek"),
             ApiEndpoint("BUILD_GROQ_KEY_1", "https://api.groq.com/openai/v1", "Groq"),
@@ -93,7 +89,6 @@ class WinatraKeyboardService : InputMethodService() {
             ApiEndpoint("BUILD_GROQ_KEY_24", "https://api.groq.com/openai/v1", "Groq")
         )
 
-        // Daftar berbobot: DeepSeek diulang DEEPSEEK_WEIGHT kali, setiap Groq 1 kali
         private val WEIGHTED_ENDPOINTS: List<ApiEndpoint> by lazy {
             val deepseek = API_ENDPOINTS.first { it.type == "DeepSeek" }
             val groqs = API_ENDPOINTS.filter { it.type == "Groq" }
@@ -103,21 +98,36 @@ class WinatraKeyboardService : InputMethodService() {
         val ROWS_LOWER = arrayOf(
             arrayOf("q","w","e","r","t","y","u","i","o","p"),
             arrayOf("a","s","d","f","g","h","j","k","l"),
-            arrayOf("SHIFT","z","x","c","v","b","n","m","⌫"),
-            arrayOf("?123", ",", ".", "?", "SPACE", "ENTER")
+            arrayOf("⇧","z","x","c","v","b","n","m","⌫"),     // IMPROVED: SHIFT -> ⇧
+            arrayOf("?123", ",", "space", ".", "↩")            // IMPROVED: SPACE -> space, ENTER -> ↩
         )
         val ROWS_UPPER = arrayOf(
             arrayOf("Q","W","E","R","T","Y","U","I","O","P"),
             arrayOf("A","S","D","F","G","H","J","K","L"),
-            arrayOf("SHIFT","Z","X","C","V","B","N","M","⌫"),
-            arrayOf("?123", ",", ".", "?", "SPACE", "ENTER")
+            arrayOf("⇪","Z","X","C","V","B","N","M","⌫"),     // IMPROVED: CAPS LOCK ⇪
+            arrayOf("?123", ",", "space", ".", "↩")
         )
         val ROWS_SYMBOL = arrayOf(
             arrayOf("1","2","3","4","5","6","7","8","9","0"),
             arrayOf("@","#","$","%","&","-","+","(",")","/"),
-            arrayOf("*","\"","'",":",";","!","?", "⌫"),
-            arrayOf("ABC", ",", ".", "SPACE", "ENTER")
+            arrayOf("*","\"","'",":",";","!","?","⌫"),
+            arrayOf("ABC", ",", "space", ".", "↩")
         )
+
+        // IMPROVED: Warna tema keyboard
+        const val COLOR_KEY_BG        = "#2C2C2E"   // tombol huruf/angka
+        const val COLOR_KEY_FUNC      = "#3D3D3F"   // tombol fungsi
+        const val COLOR_KEY_ACTION    = "#0A84FF"   // tombol Enter / aksen biru
+        const val COLOR_KEY_PRESSED   = "#4A4A4C"   // efek tekan
+        const val COLOR_KEY_TEXT      = "#FFFFFF"
+        const val COLOR_KB_BG         = "#131315"   // background keyboard lebih gelap
+        const val COLOR_TAB_BG        = "#1C1C1E"
+        const val COLOR_TAB_ACTIVE_BG = "#2C2C2E"
+        const val COLOR_PANEL_BG      = "#1C1C1E"
+        const val COLOR_INPUT_BG      = "#2C2C2E"
+        const val COLOR_HINT          = "#636366"
+        const val COLOR_SUBTEXT       = "#8E8E93"
+        const val COLOR_TEXT_MAIN     = "#EBEBF5"
     }
 
     override fun onCreateInputView(): View {
@@ -125,15 +135,16 @@ class WinatraKeyboardService : InputMethodService() {
 
         rootView = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#1C1C1E"))
+            setBackgroundColor(Color.parseColor(COLOR_KB_BG))
         }
 
+        // IMPROVED: Tab bar lebih bersih
         tabBar = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#2C2C2E"))
+            setBackgroundColor(Color.parseColor(COLOR_TAB_BG))
         }
         tabBar.addView(buildTabBtn(ctx, "⌨", "Ketik", 0))
-        tabBar.addView(buildTabBtn(ctx, "✨", "Tanya AI", 1))
+        tabBar.addView(buildTabBtn(ctx, "✦", "Tanya AI", 1))   // IMPROVED: ikon lebih rapi
         tabBar.addView(buildTabBtn(ctx, "📖", "Baca", 2))
         rootView.addView(tabBar)
 
@@ -142,7 +153,7 @@ class WinatraKeyboardService : InputMethodService() {
 
         keyboardPanel = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#1C1C1E"))
+            setBackgroundColor(Color.parseColor(COLOR_KB_BG))
         }
         buildKeyboardRows(ctx)
         rootView.addView(keyboardPanel)
@@ -153,30 +164,38 @@ class WinatraKeyboardService : InputMethodService() {
         return rootView
     }
 
+    // IMPROVED: Tab button dengan desain lebih bersih
     private fun buildTabBtn(ctx: Context, icon: String, label: String, index: Int): LinearLayout {
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setPadding(0, dp(12), 0, dp(12))
-            setBackgroundColor(if (currentTab == index) Color.parseColor("#3A3A3C") else Color.TRANSPARENT)
+            setPadding(0, dp(10), 0, dp(10))
+            setBackgroundColor(if (currentTab == index) Color.parseColor(COLOR_TAB_ACTIVE_BG) else Color.TRANSPARENT)
             tag = "tab_$index"
             setOnClickListener { switchTab(index) }
         }
+        // IMPROVED: indicator garis atas saat aktif
+        val indicator = View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(2))
+            setBackgroundColor(if (currentTab == index) Color.parseColor(COLOR_KEY_ACTION) else Color.TRANSPARENT)
+            tag = "indicator_$index"
+        }
         val iconTv = TextView(ctx).apply {
             text = icon
-            textSize = 24f
+            textSize = 22f
             gravity = Gravity.CENTER
-            setTextColor(if (currentTab == index) Color.WHITE else Color.parseColor("#8E8E93"))
+            setTextColor(if (currentTab == index) Color.WHITE else Color.parseColor(COLOR_SUBTEXT))
             tag = "icon_$index"
         }
         val labelTv = TextView(ctx).apply {
             text = label
-            textSize = 11f
+            textSize = 10f
             gravity = Gravity.CENTER
-            setTextColor(if (currentTab == index) Color.WHITE else Color.parseColor("#636366"))
+            setTextColor(if (currentTab == index) Color.WHITE else Color.parseColor(COLOR_HINT))
             tag = "label_$index"
         }
+        container.addView(indicator)
         container.addView(iconTv)
         container.addView(labelTv)
         return container
@@ -198,11 +217,13 @@ class WinatraKeyboardService : InputMethodService() {
                 scope.launch {
                     val isPremium = isUserPremium()
                     withContext(Dispatchers.Main) {
-                        if (isPremium) {
-                            aiStatus.text = "✨ Akun Premium: Tanpa Batas ✨"
-                            aiStatus.visibility = View.VISIBLE
-                        } else {
-                            aiStatus.visibility = View.GONE
+                        if (::aiStatus.isInitialized) {  // FIX: null-check
+                            if (isPremium) {
+                                aiStatus.text = "✨ Akun Premium: Tanpa Batas"
+                                aiStatus.visibility = View.VISIBLE
+                            } else {
+                                aiStatus.visibility = View.GONE
+                            }
                         }
                     }
                 }
@@ -215,13 +236,13 @@ class WinatraKeyboardService : InputMethodService() {
                     val isPremium = isUserPremium()
                     withContext(Dispatchers.Main) {
                         if (lastAnswer.isNotEmpty()) {
-                            val premiumHeader = if (isPremium) "✨ Akun Premium - Unlimited ✨\n\n" else ""
+                            val premiumHeader = if (isPremium) "✨ Premium — Unlimited\n\n" else ""
                             readAnswer.text = premiumHeader + lastAnswer
                             readScrollView.visibility = View.VISIBLE
                             readStatus.text = "Pertanyaan: $lastQuestion"
                             readStatus.visibility = View.VISIBLE
                         } else {
-                            readStatus.text = "Belum ada jawaban. Tanya dulu di tab ✨"
+                            readStatus.text = "Belum ada jawaban. Tanya dulu di tab ✦"
                             readStatus.visibility = View.VISIBLE
                             readScrollView.visibility = View.GONE
                         }
@@ -235,29 +256,32 @@ class WinatraKeyboardService : InputMethodService() {
         for (i in 0..2) {
             val tabView = tabBar.findViewWithTag<LinearLayout>("tab_$i")
             if (tabView != null) {
+                val indicator = tabView.findViewWithTag<View>("indicator_$i")
                 val icon = tabView.findViewWithTag<TextView>("icon_$i")
                 val label = tabView.findViewWithTag<TextView>("label_$i")
                 val active = i == currentTab
-                tabView.setBackgroundColor(if (active) Color.parseColor("#3A3A3C") else Color.TRANSPARENT)
-                icon?.setTextColor(if (active) Color.WHITE else Color.parseColor("#8E8E93"))
-                label?.setTextColor(if (active) Color.WHITE else Color.parseColor("#636366"))
+                tabView.setBackgroundColor(if (active) Color.parseColor(COLOR_TAB_ACTIVE_BG) else Color.TRANSPARENT)
+                indicator?.setBackgroundColor(if (active) Color.parseColor(COLOR_KEY_ACTION) else Color.TRANSPARENT)
+                icon?.setTextColor(if (active) Color.WHITE else Color.parseColor(COLOR_SUBTEXT))
+                label?.setTextColor(if (active) Color.WHITE else Color.parseColor(COLOR_HINT))
             }
         }
     }
 
+    // IMPROVED: Input bar lebih rapi dengan rounded input field
     private fun buildAIInputBar(ctx: Context): LinearLayout {
         val bar = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#2C2C2E"))
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundColor(Color.parseColor(COLOR_TAB_BG))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
         }
 
         aiStatus = TextView(ctx).apply {
             text = ""
-            textSize = 13f
-            setTextColor(Color.parseColor("#636366"))
+            textSize = 12f
+            setTextColor(Color.parseColor(COLOR_HINT))
             visibility = View.GONE
-            setPadding(0, 0, 0, dp(8))
+            setPadding(dp(4), 0, 0, dp(6))
         }
         bar.addView(aiStatus)
 
@@ -266,27 +290,39 @@ class WinatraKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
+        // IMPROVED: Input field dengan rounded corners
+        val inputBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(22).toFloat()
+            setColor(Color.parseColor(COLOR_INPUT_BG))
+        }
         aiInput = EditText(ctx).apply {
             hint = "Ketik pertanyaan..."
-            setHintTextColor(Color.parseColor("#636366"))
+            setHintTextColor(Color.parseColor(COLOR_HINT))
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#3A3A3C"))
-            textSize = 16f
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = inputBg
+            textSize = 15f
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             maxLines = 2
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             isFocusableInTouchMode = true
         }
 
+        // IMPROVED: Tombol kirim bulat
+        val sendBg = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(COLOR_KEY_ACTION))
+        }
         val btnSend = TextView(ctx).apply {
-            text = "Kirim"
-            textSize = 15f
+            text = "↑"
+            textSize = 20f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#0A84FF"))
-            setPadding(dp(24), dp(14), dp(24), dp(14))
-            val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            params.setMargins(dp(14), 0, 0, 0)
+            background = sendBg
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            val size = dp(44)
+            val params = LinearLayout.LayoutParams(size, size)
+            params.setMargins(dp(10), 0, 0, 0)
             layoutParams = params
             setOnClickListener { handleAIQuery() }
         }
@@ -301,31 +337,37 @@ class WinatraKeyboardService : InputMethodService() {
     private fun buildReadPanel(ctx: Context): LinearLayout {
         val panel = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#1C1C1E"))
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setBackgroundColor(Color.parseColor(COLOR_PANEL_BG))
+            setPadding(dp(16), dp(14), dp(16), dp(14))
         }
 
         readStatus = TextView(ctx).apply {
-            text = "Belum ada jawaban. Tanya dulu di tab ✨"
+            text = "Belum ada jawaban. Tanya dulu di tab ✦"
             textSize = 13f
-            setTextColor(Color.parseColor("#636366"))
+            setTextColor(Color.parseColor(COLOR_HINT))
             setPadding(0, 0, 0, dp(10))
         }
         panel.addView(readStatus)
 
         readScrollView = ScrollView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(280)
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(260)
             )
             visibility = View.GONE
         }
+        // IMPROVED: Rounded card untuk jawaban
+        val answerBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(12).toFloat()
+            setColor(Color.parseColor("#2C2C2E"))
+        }
         readAnswer = TextView(ctx).apply {
             text = ""
-            textSize = 16f
-            setTextColor(Color.parseColor("#EBEBF5"))
-            setLineSpacing(0f, 1.5f)
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            textSize = 15f
+            setTextColor(Color.parseColor(COLOR_TEXT_MAIN))
+            setLineSpacing(dp(4).toFloat(), 1f)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = answerBg
         }
         readScrollView.addView(readAnswer)
         panel.addView(readScrollView)
@@ -336,16 +378,23 @@ class WinatraKeyboardService : InputMethodService() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).also { it.setMargins(0, dp(20), 0, 0) }
+            ).also { it.setMargins(0, dp(14), 0, 0) }
         }
 
+        // IMPROVED: Tombol dengan rounded corners
+        val insertBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(22).toFloat()
+            setColor(Color.parseColor(COLOR_KEY_ACTION))
+        }
         val btnInsert = TextView(ctx).apply {
             text = "↳ Sisipkan"
-            textSize = 15f
+            textSize = 14f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#0A84FF"))
-            setPadding(dp(22), dp(14), dp(22), dp(14))
+            background = insertBg
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setPadding(dp(20), dp(12), dp(20), dp(12))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             setOnClickListener {
                 currentInputConnection?.commitText(lastAnswer, 1)
@@ -353,22 +402,27 @@ class WinatraKeyboardService : InputMethodService() {
             }
         }
 
+        val clearBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(22).toFloat()
+            setColor(Color.parseColor("#3A3A3C"))
+        }
         val btnClear = TextView(ctx).apply {
             text = "Hapus"
-            textSize = 15f
+            textSize = 14f
             gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#8E8E93"))
-            setBackgroundColor(Color.parseColor("#2C2C2E"))
-            setPadding(dp(22), dp(14), dp(22), dp(14))
+            setTextColor(Color.parseColor(COLOR_SUBTEXT))
+            background = clearBg
+            setPadding(dp(20), dp(12), dp(20), dp(12))
             val params = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            params.setMargins(dp(12), 0, 0, 0)
+            params.setMargins(dp(10), 0, 0, 0)
             layoutParams = params
             setOnClickListener {
                 lastAnswer = ""
                 lastQuestion = ""
                 readAnswer.text = ""
                 readScrollView.visibility = View.GONE
-                readStatus.text = "Belum ada jawaban. Tanya dulu di tab ✨"
+                readStatus.text = "Belum ada jawaban. Tanya dulu di tab ✦"
             }
         }
 
@@ -380,9 +434,10 @@ class WinatraKeyboardService : InputMethodService() {
     }
 
     private fun buildKeyboardRows(ctx: Context) {
+        // IMPROVED: Padding keyboard lebih rapi, mirip Gboard
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(6), dp(8), dp(6), dp(10))
+            setPadding(dp(4), dp(6), dp(4), dp(12))
         }
         refreshKeyboardRows(ctx, container)
         keyboardPanel.addView(container)
@@ -402,7 +457,7 @@ class WinatraKeyboardService : InputMethodService() {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).also { it.setMargins(0, dp(5), 0, dp(5)) }
+                ).also { it.setMargins(0, dp(4), 0, dp(4)) }  // IMPROVED: margin antar baris lebih baik
             }
             for (key in row) {
                 val btn = buildKeyButton(ctx, key)
@@ -412,35 +467,68 @@ class WinatraKeyboardService : InputMethodService() {
         }
     }
 
-    private fun buildKeyButton(ctx: Context, label: String): TextView {
-        val isSpecial = label in listOf("SHIFT", "⌫", "?123", "ABC", "SPACE", "ENTER")
-        val text = when (label) {
-            "SHIFT" -> if (isCaps) "⇪" else "⇧"
-            "SPACE" -> "space"
-            "ENTER" -> "return"
-            else -> label
+    // IMPROVED: Fungsi helper untuk membuat rounded drawable tombol
+    private fun makeKeyDrawable(color: String, radius: Float = 8f): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(radius.toInt()).toFloat()
+            setColor(Color.parseColor(color))
         }
-        return TextView(ctx).apply {
-            this.text = text
-            textSize = if (isSpecial) 14f else 18f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setBackgroundColor(
-                if (isSpecial) Color.parseColor("#3A3A3C") else Color.parseColor("#2C2C2E")
-            )
-            isAllCaps = false
-            setTypeface(null, android.graphics.Typeface.BOLD)
+    }
 
+    private fun buildKeyButton(ctx: Context, label: String): TextView {
+        val isFuncKey = label in listOf("⇧","⇪","⌫","?123","ABC","space","↩")
+
+        // IMPROVED: Tentukan warna & teks setiap tombol
+        val (displayText, bgColor, fontSize) = when (label) {
+            "⇧"   -> Triple("⇧", if (isShift && !isCaps) "#0A84FF" else COLOR_KEY_FUNC, 20f) // aktif biru
+            "⇪"   -> Triple("⇪", COLOR_KEY_ACTION, 20f)    // caps lock selalu biru
+            "⌫"   -> Triple("⌫", COLOR_KEY_FUNC, 20f)
+            "space" -> Triple("", COLOR_KEY_FUNC, 14f)       // IMPROVED: spasi tanpa teks, biar lebar
+            "↩"   -> Triple("↩", COLOR_KEY_ACTION, 20f)     // IMPROVED: Enter biru
+            "?123" -> Triple("?123", COLOR_KEY_FUNC, 13f)
+            "ABC"  -> Triple("ABC", COLOR_KEY_FUNC, 13f)
+            else  -> Triple(label, COLOR_KEY_BG, 20f)        // IMPROVED: font size 20
+        }
+
+        return TextView(ctx).apply {
+            text = displayText
+            textSize = fontSize
+            gravity = Gravity.CENTER
+            setTextColor(Color.parseColor(COLOR_KEY_TEXT))
+            background = makeKeyDrawable(bgColor)
+            isAllCaps = false
+            // IMPROVED: Font bold untuk label lebih jelas
+            setTypeface(null, if (isFuncKey) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+
+            // IMPROVED: Weight & ukuran tombol lebih proporsional
             val weight = when (label) {
-                "SPACE" -> 3.5f
-                "ENTER" -> 1.8f
-                "SHIFT", "⌫", "?123", "ABC" -> 1.3f
+                "space" -> 3.8f
+                "↩"    -> 1.5f
+                "⇧","⇪","⌫" -> 1.4f
+                "?123","ABC" -> 1.4f
                 else -> 1f
             }
-            layoutParams = LinearLayout.LayoutParams(0, dp(50), weight).apply {
-                setMargins(dp(4), 0, dp(4), 0)
+            // IMPROVED: Tinggi tombol 56dp, margin lebih rapat 2dp
+            layoutParams = LinearLayout.LayoutParams(0, dp(52), weight).apply {
+                setMargins(dp(3), 0, dp(3), 0)
             }
-            setPadding(dp(2), dp(6), dp(2), dp(6))
+            setPadding(dp(2), dp(4), dp(2), dp(4))
+
+            // IMPROVED: Efek tekan visual (darken on press)
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        (v as TextView).background = makeKeyDrawable(COLOR_KEY_PRESSED)
+                        false
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        (v as TextView).background = makeKeyDrawable(bgColor)
+                        false
+                    }
+                    else -> false
+                }
+            }
             setOnClickListener { handleKeyPress(label) }
         }
     }
@@ -456,7 +544,7 @@ class WinatraKeyboardService : InputMethodService() {
                     ic.deleteSurroundingText(1, 0)
                 }
             }
-            "SHIFT" -> {
+            "⇧", "⇪" -> {  // IMPROVED: handle both shift symbols
                 when {
                     isCaps -> { isCaps = false; isShift = false }
                     isShift -> isCaps = true
@@ -473,28 +561,26 @@ class WinatraKeyboardService : InputMethodService() {
                     refreshKeyboardRows(this, keyboardPanel.getChildAt(0) as LinearLayout)
                 }
             }
-            "SPACE" -> {
+            "space" -> {
                 if (currentTab == 1 && ::aiInput.isInitialized) {
                     val start = aiInput.selectionStart
                     val end = aiInput.selectionEnd
-                    aiInput.text.replace(start, end, " ")
+                    aiInput.text.replace(start.coerceAtLeast(0), end.coerceAtLeast(0), " ")
                 } else {
                     ic.commitText(" ", 1)
                 }
             }
-            "ENTER" -> {
+            "↩" -> {  // IMPROVED: handle new enter symbol
                 if (currentTab == 1 && ::aiInput.isInitialized) {
-                    val start = aiInput.selectionStart
-                    val end = aiInput.selectionEnd
-                    aiInput.text.replace(start, end, "\n")
+                    handleAIQuery()  // IMPROVED: Enter di tab AI langsung kirim
                 } else {
                     ic.commitText("\n", 1)
                 }
             }
             else -> {
                 if (currentTab == 1 && ::aiInput.isInitialized) {
-                    val start = aiInput.selectionStart
-                    val end = aiInput.selectionEnd
+                    val start = aiInput.selectionStart.coerceAtLeast(0)
+                    val end = aiInput.selectionEnd.coerceAtLeast(0)
                     aiInput.text.replace(start, end, key)
                 } else {
                     ic.commitText(key, 1)
@@ -590,45 +676,65 @@ class WinatraKeyboardService : InputMethodService() {
         } catch (e: Exception) { false }
     }
 
+    // FIX: showStatus dengan null-check
     private fun showStatus(msg: String) {
+        if (!::aiStatus.isInitialized) return
         aiStatus.text = msg
         aiStatus.visibility = View.VISIBLE
     }
 
+    // FIX: handleAIQuery dengan null-check dan try-catch
     private fun handleAIQuery() {
+        if (!::aiInput.isInitialized || !::aiStatus.isInitialized) return
+
         if (FirebaseAuth.getInstance().currentUser == null) {
             showStatus("Silakan login terlebih dahulu.")
             return
         }
-        val question = aiInput.text.toString().trim()
+        val question = aiInput.text?.toString()?.trim() ?: ""
         if (question.isEmpty()) {
             showStatus("Ketik pertanyaan dulu...")
             return
         }
         lastQuestion = question
         scope.launch {
-            resetDailyQuotaIfNeeded()
-            syncQuotaFromFirestore()
-            val isPremium = isUserPremium()
-            if (!isPremium && !checkAndShowLimit()) return@launch
-            sendToAi(question, isPremium)
+            try {
+                resetDailyQuotaIfNeeded()
+                syncQuotaFromFirestore()
+                val isPremium = isUserPremium()
+                if (!isPremium && !checkAndShowLimit()) return@launch
+                sendToAi(question, isPremium)
+            } catch (e: Exception) {
+                Log.e(TAG, "handleAIQuery error: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    showStatus("Terjadi error. Silakan coba lagi.")
+                }
+            }
         }
     }
 
+    // FIX: sendToAi dengan try-catch dan null-check aiStatus
     private fun sendToAi(question: String, isPremium: Boolean = false) {
-        showStatus("⏳ Memproses...")
+        showStatus("⏳ Sedang memproses...")
         val mode = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString("keyboard_mode", "Essay") ?: "Essay"
         scope.launch {
-            val result = callAIWithFallback(question, mode)
-            withContext(Dispatchers.Main) {
-                if (result.startsWith("Error:")) {
-                    showStatus(getUserFriendlyErrorMessage(result, "AI"))
-                } else {
-                    if (!isPremium) decrementRemainingQuota()
-                    lastAnswer = result
-                    aiStatus.visibility = View.GONE
-                    switchTab(2)
+            try {
+                val result = callAIWithFallback(question, mode)
+                withContext(Dispatchers.Main) {
+                    if (result.startsWith("Error:")) {
+                        showStatus(getUserFriendlyErrorMessage(result, "AI"))
+                    } else {
+                        if (!isPremium) decrementRemainingQuota()
+                        lastAnswer = result
+                        if (::aiStatus.isInitialized) aiStatus.visibility = View.GONE
+                        switchTab(2)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "sendToAi error: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    showStatus("Terjadi gangguan. Silakan coba lagi.")
                 }
             }
         }
@@ -636,13 +742,11 @@ class WinatraKeyboardService : InputMethodService() {
 
     // ---------- WEIGHTED RANDOM API FALLBACK ----------
     private suspend fun callAIWithFallback(question: String, mode: String): String {
-        // Salin daftar berbobot untuk request ini (akan diubah jika ada endpoint gagal)
         val candidates = WEIGHTED_ENDPOINTS.toMutableList()
         Log.i(TAG, "Starting API call with ${candidates.size} weighted candidates (Q: ${question.take(50)})")
         var attemptCount = 0
         while (candidates.isNotEmpty()) {
             attemptCount++
-            // Pilih endpoint secara acak (dengan bobot) dari daftar kandidat
             val idx = Random.nextInt(candidates.size)
             val endpoint = candidates[idx]
             Log.d(TAG, "Attempt $attemptCount: Using ${endpoint.type} (key=${endpoint.key.take(15)}...)")
@@ -651,7 +755,6 @@ class WinatraKeyboardService : InputMethodService() {
                 Log.i(TAG, "✓ Success from ${endpoint.type} after $attemptCount attempts")
                 return result
             } else {
-                // Hapus endpoint yang gagal untuk request ini (agar tidak dicoba lagi)
                 candidates.removeAt(idx)
                 Log.w(TAG, "✗ ${endpoint.type} failed: ${result?.take(30)}, remaining: ${candidates.size}")
             }
@@ -665,7 +768,6 @@ class WinatraKeyboardService : InputMethodService() {
                           else "Berikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
         val model = if (endpoint.type == "DeepSeek") "deepseek-chat" else "llama-3.3-70b-versatile"
 
-        // Validate API key
         if (endpoint.key.startsWith("BUILD_")) {
             Log.e(TAG, "❌ INVALID KEY DETECTED: ${endpoint.key} (placeholder not replaced!)")
             return "Error: placeholder_key"

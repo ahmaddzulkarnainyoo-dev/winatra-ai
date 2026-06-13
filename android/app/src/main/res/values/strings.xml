@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Winatra AI</string>
-    <string name="accessibility_service_description">Winatra AI butuh akses ini untuk membaca clipboard saat tombol Jawab ditekan dari notifikasi.</string>
+    <string name="accessibility_service_description">Winatra AI akan membaca teks yang Anda pilih atau tampilkan di layar, lalu memberikan jawaban/penjelasan menggunakan AI. Aktifkan untuk mendapatkan bantuan belajar di aplikasi lain.</string>
 </resources>
