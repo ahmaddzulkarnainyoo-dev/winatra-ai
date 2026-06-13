@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.27.4'
           channel: 'stable'
 
       - name: Create google-services.json
@@ -30,56 +30,72 @@ jobs:
 
       - name: Validate Secrets
         run: |
+          echo "Checking if secrets are available..."
           if [ -z "${{ secrets.GROQ_API_KEYS }}" ]; then
-            echo "ERROR: GROQ_API_KEYS secret not set!"
+            echo "ERROR: GROQ_API_KEYS secret is not set!"
             exit 1
           fi
           if [ -z "${{ secrets.DEEPSEEK_API_KEY }}" ]; then
-            echo "ERROR: DEEPSEEK_API_KEY secret not set!"
+            echo "ERROR: DEEPSEEK_API_KEY secret is not set!"
             exit 1
           fi
-          echo "✓ Secrets available"
+          echo "✓ Secrets are available"
 
       - name: Inject Groq API Keys (24 keys)
         run: |
           IFS=',' read -r -a keys <<< "${{ secrets.GROQ_API_KEYS }}"
+          echo "Processing ${#keys[@]} Groq keys..."
+          
           for i in "${!keys[@]}"; do
             num=$((i+1))
-            sed -i "s#BUILD_GROQ_KEY_$num#${keys[$i]}#g" \
+            key="${keys[$i]}"
+            # Use # as sed delimiter to avoid conflicts with special chars in keys
+            sed -i "s#BUILD_GROQ_KEY_$num#$key#g" \
               android/app/src/main/kotlin/com/example/winatra_ai/WinatraService.kt
-            sed -i "s#BUILD_GROQ_KEY_$num#${keys[$i]}#g" \
+            sed -i "s#BUILD_GROQ_KEY_$num#$key#g" \
               android/app/src/main/kotlin/com/example/winatra_ai/WinatraKeyboardService.kt
+            echo "  ✓ Injected Groq key $num"
           done
 
       - name: Inject DeepSeek API Key
         run: |
-          sed -i "s#BUILD_DEEPSEEK_KEY#${{ secrets.DEEPSEEK_API_KEY }}#g" \
+          echo "Processing DeepSeek key..."
+          deepseek_key="${{ secrets.DEEPSEEK_API_KEY }}"
+          sed -i "s#BUILD_DEEPSEEK_KEY#$deepseek_key#g" \
             android/app/src/main/kotlin/com/example/winatra_ai/WinatraService.kt
-          sed -i "s#BUILD_DEEPSEEK_KEY#${{ secrets.DEEPSEEK_API_KEY }}#g" \
+          sed -i "s#BUILD_DEEPSEEK_KEY#$deepseek_key#g" \
             android/app/src/main/kotlin/com/example/winatra_ai/WinatraKeyboardService.kt
+          echo "  ✓ DeepSeek key injected"
 
       - name: Verify Key Injection
         run: |
           echo "Verifying key injection..."
+          
+          # Check if BUILD_ placeholders still exist
           if grep -q "BUILD_GROQ_KEY_" android/app/src/main/kotlin/com/example/winatra_ai/WinatraService.kt; then
-            echo "WARNING: Some Groq placeholders still found"
+            echo "WARNING: Some Groq placeholders still found in WinatraService.kt"
+            grep "BUILD_GROQ_KEY_" android/app/src/main/kotlin/com/example/winatra_ai/WinatraService.kt | head -5
           else
-            echo "✓ Groq placeholders replaced in WinatraService"
+            echo "✓ All Groq placeholders replaced in WinatraService.kt"
           fi
+          
           if grep -q "BUILD_DEEPSEEK_KEY" android/app/src/main/kotlin/com/example/winatra_ai/WinatraService.kt; then
-            echo "WARNING: DeepSeek placeholder still found"
+            echo "WARNING: DeepSeek placeholder still found in WinatraService.kt"
           else
-            echo "✓ DeepSeek placeholder replaced"
+            echo "✓ DeepSeek placeholder replaced in WinatraService.kt"
           fi
+          
           if grep -q "BUILD_GROQ_KEY_" android/app/src/main/kotlin/com/example/winatra_ai/WinatraKeyboardService.kt; then
-            echo "WARNING: Some Groq placeholders still found in keyboard"
+            echo "WARNING: Some Groq placeholders still found in WinatraKeyboardService.kt"
+            grep "BUILD_GROQ_KEY_" android/app/src/main/kotlin/com/example/winatra_ai/WinatraKeyboardService.kt | head -5
           else
-            echo "✓ Groq placeholders replaced in keyboard"
+            echo "✓ All Groq placeholders replaced in WinatraKeyboardService.kt"
           fi
+          
           if grep -q "BUILD_DEEPSEEK_KEY" android/app/src/main/kotlin/com/example/winatra_ai/WinatraKeyboardService.kt; then
-            echo "WARNING: DeepSeek placeholder still found in keyboard"
+            echo "WARNING: DeepSeek placeholder still found in WinatraKeyboardService.kt"
           else
-            echo "✓ DeepSeek placeholder replaced in keyboard"
+            echo "✓ DeepSeek placeholder replaced in WinatraKeyboardService.kt"
           fi
 
       - name: Install dependencies
