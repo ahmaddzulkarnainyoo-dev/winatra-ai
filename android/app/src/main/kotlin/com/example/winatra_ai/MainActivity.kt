@@ -1,7 +1,11 @@
 ﻿package com.example.winatra_ai
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -9,17 +13,24 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.view.accessibility.AccessibilityManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "winatra/service"
     private val CLIPBOARD_CHANNEL = "winatra/clipboard"
     private val LIMIT_CHANNEL = "winatra/limit"   // channel untuk limit harian
+    private val ACCESSIBILITY_CHANNEL = "winatra_accessibility"
+    private val ACCESSIBILITY_EVENTS_CHANNEL = "winatra_accessibility_events"
     private val NOTIFICATION_PERMISSION_REQUEST_CODE = 1001
+
+    private var accessibilityEventSink: EventChannel.EventSink? = null
+    private var accessibilityTextReceiver: BroadcastReceiver? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -172,10 +183,6 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LIMIT_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "checkLimit" -> {
-                    // Akan diimplementasikan di Flutter side (LimitService)
-                    // Kita hanya meneruskan panggilan ke Flutter, tapi karena ini dari Flutter sendiri,
-                    // sebenarnya lebih baik langsung dipanggil dari Flutter tanpa melalui native.
-                    // Namun untuk konsistensi, kita biarkan Flutter yang menangani.
                     result.notImplemented()
                 }
                 "incrementCount" -> {
@@ -183,6 +190,90 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        // Accessibility bridge
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, ACCESSIBILITY_CHANNEL).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getSelectedText" -> {
+                    result.success(WinatraAccessibilityService.lastAccessibilityText)
+                }
+                "getScreenText" -> {
+                    result.success(WinatraAccessibilityService.lastAccessibilityText)
+                }
+                "startListening" -> {
+                    WinatraAccessibilityService.isListening = true
+                    result.success(null)
+                }
+                "stopListening" -> {
+                    WinatraAccessibilityService.isListening = false
+                    result.success(null)
+                }
+                "isAccessibilityServiceEnabled" -> {
+                    val enabled = try {
+                        val accessibilityEnabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0)
+                        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+                        accessibilityEnabled == 1 && enabledServices.contains("${packageName}/.WinatraAccessibilityService", ignoreCase = true)
+                    } catch (e: Exception) {
+                        false
+                    }
+                    result.success(enabled)
+                }
+                "processAccessibilityText" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    if (text.isNotBlank()) {
+                        val intent = Intent(this, WinatraService::class.java).apply {
+                            action = WinatraService.ACTION_ACCESSIBILITY_RESULT
+                            putExtra("accessibility_text", text)
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                    }
+                    result.success(null)
+                }
+                "requestAccessibilityPermission" -> {
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    startActivity(intent)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, ACCESSIBILITY_EVENTS_CHANNEL).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                accessibilityEventSink = events
+                if (accessibilityTextReceiver == null) {
+                    accessibilityTextReceiver = object : BroadcastReceiver() {
+                        override fun onReceive(context: Context?, intent: Intent?) {
+                            val text = intent?.getStringExtra(WinatraAccessibilityService.EXTRA_TEXT) ?: ""
+                            if (text.isNotBlank()) {
+                                accessibilityEventSink?.success(text)
+                            }
+                        }
+                    }
+                    registerReceiver(accessibilityTextReceiver, IntentFilter(WinatraAccessibilityService.ACTION_TEXT_UPDATED))
+                }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                accessibilityEventSink = null
+                if (accessibilityTextReceiver != null) {
+                    unregisterReceiver(accessibilityTextReceiver)
+                    accessibilityTextReceiver = null
+                }
+            }
+        })
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (accessibilityTextReceiver != null) {
+            unregisterReceiver(accessibilityTextReceiver)
+            accessibilityTextReceiver = null
         }
     }
 }
