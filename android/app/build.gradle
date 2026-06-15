@@ -1,4 +1,4 @@
-def localProperties = new Properties()
+﻿def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
@@ -25,17 +25,12 @@ apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 android {
     compileSdk 34
     ndkVersion "27.0.12077973"
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
         coreLibraryDesugaringEnabled true
     }
-
-    kotlinOptions {
-        jvmTarget = '17'
-    }
-
+    kotlinOptions { jvmTarget = '17' }
     defaultConfig {
         applicationId "com.example.winatra_ai"
         minSdk 24
@@ -43,7 +38,6 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
-
     buildTypes {
         release {
             signingConfig signingConfigs.debug
