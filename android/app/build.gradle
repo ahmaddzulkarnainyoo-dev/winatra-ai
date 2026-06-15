@@ -1,4 +1,4 @@
-def localProperties = new Properties()
+﻿def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
@@ -8,28 +8,38 @@ if (localPropertiesFile.exists()) {
 
 def flutterRoot = localProperties.getProperty('flutter.sdk')
 if (flutterRoot == null) {
-    throw new GradleException("Flutter SDK not found.")
+    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
 }
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
-if (flutterVersionCode == null) flutterVersionCode = '1'
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
-if (flutterVersionName == null) flutterVersionName = '1.0'
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
 
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
-apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 apply plugin: 'com.google.gms.google-services'
+apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
     compileSdk 34
     ndkVersion "27.0.12077973"
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
         coreLibraryDesugaringEnabled true
     }
-    kotlinOptions { jvmTarget = '17' }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
     defaultConfig {
         applicationId "com.example.winatra_ai"
         minSdk 24
@@ -37,6 +47,7 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
+
     buildTypes {
         release {
             signingConfig signingConfigs.debug
@@ -44,7 +55,9 @@ android {
     }
 }
 
-flutter { source '../..' }
+flutter {
+    source '../..'
+}
 
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
