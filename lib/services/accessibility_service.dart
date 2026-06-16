@@ -59,6 +59,24 @@ class AccessibilityService {
     } catch (_) {}
   }
 
+  static Future<void> setVoiceCommandEnabled(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setVoiceCommandEnabled', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  static Future<void> setProactiveEnabled(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setProactiveEnabled', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  static Future<void> testVoiceCommand() async {
+    try {
+      await _channel.invokeMethod('testVoiceCommand');
+    } catch (_) {}
+  }
+
   static Future<void> dispose() async {
     try {
       await _eventSubscription?.cancel();

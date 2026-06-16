@@ -14,7 +14,10 @@ class AccessibilitySettingsScreen extends StatefulWidget {
 class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScreen> {
   bool serviceEnabled = false;
   bool listeningEnabled = true;
+  bool voiceCommandEnabled = true;
+  bool proactiveEnabled = true;
   int selectedTrigger = 0;
+  bool disclaimerAccepted = false;
   bool loading = true;
 
   @override
@@ -29,12 +32,19 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
     setState(() {
       serviceEnabled = enabled;
       listeningEnabled = prefs.getBool('accessibility_listening_enabled') ?? true;
+      voiceCommandEnabled = prefs.getBool('accessibility_voice_command_enabled') ?? true;
+      proactiveEnabled = prefs.getBool('accessibility_proactive_enabled') ?? true;
+      disclaimerAccepted = prefs.getBool('accessibility_disclaimer_accepted') ?? false;
       selectedTrigger = prefs.getInt('accessibility_trigger') ?? 0;
       loading = false;
     });
   }
 
   Future<void> _openAccessibilitySettings() async {
+    if (!disclaimerAccepted) {
+      final accepted = await _showDisclaimer();
+      if (!accepted) return;
+    }
     await AccessibilityService.requestAccessibilityPermission();
     await Future.delayed(const Duration(milliseconds: 400));
     _loadStatus();
@@ -51,6 +61,66 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
     } else {
       await AccessibilityService.stopListening();
     }
+  }
+
+  Future<void> _toggleVoiceCommand(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value && !disclaimerAccepted) {
+      final accepted = await _showDisclaimer();
+      if (!accepted) return;
+    }
+    await prefs.setBool('accessibility_voice_command_enabled', value);
+    setState(() {
+      voiceCommandEnabled = value;
+    });
+    await AccessibilityService.setVoiceCommandEnabled(value);
+  }
+
+  Future<void> _toggleProactive(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (value && !disclaimerAccepted) {
+      final accepted = await _showDisclaimer();
+      if (!accepted) return;
+    }
+    await prefs.setBool('accessibility_proactive_enabled', value);
+    setState(() {
+      proactiveEnabled = value;
+    });
+    await AccessibilityService.setProactiveEnabled(value);
+  }
+
+  Future<bool> _showDisclaimer() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('Disclaimer Privasi', style: TextStyle(color: Color(0xFF9B7EFF))),
+        content: const Text(
+          'Fitur ini akan membaca layar dan mendengarkan suara Anda. Data tidak disimpan di server. Hanya digunakan untuk membantu aktivitas Anda. Aktifkan?',
+          style: TextStyle(color: Color(0xFFCCCCCC), height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Tolak', style: TextStyle(color: Colors.white)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6B4EFF)),
+            child: const Text('Aktifkan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    ) ?? false;
+    if (accepted) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('accessibility_disclaimer_accepted', true);
+      setState(() {
+        disclaimerAccepted = true;
+      });
+    }
+    return accepted;
   }
 
   Future<void> _selectTrigger(int index) async {
@@ -109,6 +179,8 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
                   _statusCard(),
                   const SizedBox(height: 20),
                   _actionCard(),
+                  const SizedBox(height: 20),
+                  _featureCard(),
                   const SizedBox(height: 20),
                   _triggerCard(),
                   const SizedBox(height: 20),
@@ -186,18 +258,45 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
     );
   }
 
-  Widget _triggerCard() {
+  Widget _featureCard() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Pilihan Trigger', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text('Kontrol Jarvis', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          _triggerOption(0, 'Tekan volume up 2x', true),
-          _triggerOption(1, 'Tombol mengambang (ikon nanti)', false),
-          _triggerOption(2, 'Voice command (opsional)', false),
+          SwitchListTile.adaptive(
+            value: voiceCommandEnabled,
+            title: const Text('Voice Command', style: TextStyle(color: Colors.white)),
+            subtitle: const Text('Aktifkan perintah suara Winatra.', style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12)),
+            activeColor: const Color(0xFF6B4EFF),
+            onChanged: _toggleVoiceCommand,
+          ),
+          SwitchListTile.adaptive(
+            value: proactiveEnabled,
+            title: const Text('Proaktif', style: TextStyle(color: Colors.white)),
+            subtitle: const Text('Aktifkan sambutan dan notifikasi proaktif.', style: TextStyle(color: Color(0xFFAAAAAA), fontSize: 12)),
+            activeColor: const Color(0xFF6B4EFF),
+            onChanged: _toggleProactive,
+          ),
+          const SizedBox(height: 12),
+          const Text('Perintah suara tersedia:', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 14, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text('• Winatra, baca layar\n• Winatra, jawab pertanyaan\n• Winatra, baca pesan\n• Winatra, kerjakan tugas\n• Winatra, buka [aplikasi]\n• Winatra, tulis [teks]\n• Winatra, salin jawaban\n• Winatra, baca ulang', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13, height: 1.5)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () async {
+              if (!voiceCommandEnabled) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aktifkan Voice Command terlebih dahulu.')));
+                return;
+              }
+              await AccessibilityService.testVoiceCommand();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7DFF), padding: const EdgeInsets.all(14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: const Text('Coba Suara', style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
     );
@@ -210,6 +309,25 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
       title: Text(title, style: TextStyle(color: available ? Colors.white : const Color(0xFF777799))),
       subtitle: !available ? const Text('Nanti akan dikembangkan.', style: TextStyle(color: Color(0xFF666688), fontSize: 12)) : null,
       onTap: available ? () => _selectTrigger(index) : null,
+    );
+  }
+
+  Widget _triggerCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(16)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Trigger Cepat', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          const Text('Pilih cara cepat untuk memicu Jarvis saat Anda berada di aplikasi lain.', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 14, height: 1.5)),
+          const SizedBox(height: 12),
+          _triggerOption(0, 'Tekan volume up 2x', true),
+          _triggerOption(1, 'Ketuk layar 3x', false),
+          _triggerOption(2, 'Swipe dari pojok bawah', false),
+        ],
+      ),
     );
   }
 

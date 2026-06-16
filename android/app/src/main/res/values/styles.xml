@@ -15,4 +15,5 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <string name="accessibility_service_description">Winatra AI akan membaca konten layar dan membantu Anda dengan suara ketika layanan aktif.</string>
 </resources>
