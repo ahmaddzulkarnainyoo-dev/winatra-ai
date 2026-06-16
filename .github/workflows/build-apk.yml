@@ -22,11 +22,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-<<<<<<< HEAD
-          flutter-version: '3.24.5'
-=======
-          flutter-version: '3.22.4'
->>>>>>> 37cfa566961953209c9f9cfc88453965aecd1e4a
+          flutter-version: '3.27.4'
           channel: 'stable'
 
       - name: Create google-services.json
@@ -43,27 +39,15 @@ jobs:
           sed -i "s#BUILD_DEEPSEEK_KEY#${{ secrets.DEEPSEEK_API_KEY }}#g" android/app/src/main/kotlin/com/example/winatra_ai/WinatraService.kt
           sed -i "s#BUILD_DEEPSEEK_KEY#${{ secrets.DEEPSEEK_API_KEY }}#g" android/app/src/main/kotlin/com/example/winatra_ai/WinatraKeyboardService.kt
 
-      # 🔥 OVERWRITE build.gradle dengan versi yang benar (tanpa BOM)
-      - name: Overwrite android/app/build.gradle
+      - name: Overwrite build.gradle (clean version)
         run: |
           cat > android/app/build.gradle << 'EOF'
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader ->
-                  localProperties.load(reader)
-              }
+          plugins {
+              id 'com.android.application'
+              id 'kotlin-android'
+              id 'com.google.gms.google-services'
+              id 'dev.flutter.flutter-gradle-plugin'
           }
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) throw new GradleException("Flutter SDK not found.")
-          def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
-          def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
-
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply plugin: 'com.google.gms.google-services'
-          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
           android {
               compileSdk 34
               ndkVersion "27.0.12077973"
@@ -77,8 +61,8 @@ jobs:
                   applicationId "com.example.winatra_ai"
                   minSdk 24
                   targetSdk 34
-                  versionCode flutterVersionCode.toInteger()
-                  versionName flutterVersionName
+                  versionCode 1
+                  versionName "1.0.0"
               }
               buildTypes { release { signingConfig signingConfigs.debug } }
           }
