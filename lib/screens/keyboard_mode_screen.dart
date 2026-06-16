@@ -89,6 +89,26 @@ class _KeyboardModeScreenState extends State<KeyboardModeScreen> {
               'Aktifkan keyboard khusus ini untuk menggunakan AI di semua aplikasi tanpa notifikasi. Keyboard memiliki 3 tab: Ketik, Tanya AI, dan Baca.',
               style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 14),
             ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF141426),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF6B4EFF)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text('Panduan cepat tab keyboard:', style: TextStyle(color: Color(0xFF9B7EFF), fontWeight: FontWeight.bold)),
+                  SizedBox(height: 8),
+                  Text('• Tab Ketik: Menulis teks biasa di semua aplikasi.', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13)),
+                  Text('• Tab Tanya AI: Kirim pertanyaan ke AI dan dapatkan jawaban cepat.', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13)),
+                  Text('• Tab Baca: Lihat jawaban terakhir dan salin jika perlu.', style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13)),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
             // ---- Status kuota premium ----
             Container(
@@ -107,7 +127,7 @@ class _KeyboardModeScreenState extends State<KeyboardModeScreen> {
                   else if (remainingQuota == -1)
                     const Text('Unlimited (Premium)', style: TextStyle(color: Color(0xFF00FFAA), fontWeight: FontWeight.bold))
                   else
-                    Text('$remainingQuota / 15', style: const TextStyle(color: Color(0xFF9B7EFF), fontWeight: FontWeight.bold)),
+                    Text('$remainingQuota / ${LimitService.DAILY_LIMIT}', style: const TextStyle(color: Color(0xFF9B7EFF), fontWeight: FontWeight.bold)),
                 ],
               ),
             ),

@@ -32,10 +32,10 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
 
   Future<void> _initializeRAG() async {
     try {
-      setState(() => _statusMessage = 'Initializing RAG...');
+      setState(() => _statusMessage = 'Memulai RAG...');
       final success = await RAGService.initialize();
       if (success) {
-        setState(() => _statusMessage = 'RAG Ready!');
+        setState(() => _statusMessage = 'RAG siap!');
         _refreshDocuments();
       } else {
         setState(() => _statusMessage = 'RAG initialization failed');
@@ -67,7 +67,7 @@ class _OfflineAIScreenState extends State<OfflineAIScreen> {
         _isInitialized = true;
       });
     } catch (e) {
-      setState(() => _statusMessage = 'Error: $e');
+      setState(() => _statusMessage = 'Terjadi kesalahan saat memuat model. Silakan coba lagi.' );
     }
   }
 
@@ -108,13 +108,13 @@ Jawaban:''';
       setState(() => _uploadProgress = 1.0);
       await Future.delayed(const Duration(milliseconds: 250));
       if (success) {
-        setState(() => _statusMessage = 'Document uploaded successfully!');
+        setState(() => _statusMessage = 'Dokumen berhasil diunggah!');
         _refreshDocuments();
       } else {
-        setState(() => _statusMessage = 'Failed to upload document');
+        setState(() => _statusMessage = 'Gagal mengunggah dokumen. Coba lagi.' );
       }
     } catch (e) {
-      setState(() => _statusMessage = 'Error uploading file: $e');
+      setState(() => _statusMessage = 'Terjadi kesalahan saat mengunggah file. Silakan coba lagi.' );
     } finally {
       setState(() {
         _isUploading = false;
@@ -134,7 +134,7 @@ Jawaban:''';
   Future<void> _deleteDocument(String docId) async {
     final success = await RAGService.deleteDocument(docId);
     if (success) {
-      setState(() => _statusMessage = 'Document deleted');
+      setState(() => _statusMessage = 'Dokumen dihapus');
       _refreshDocuments();
     }
   }

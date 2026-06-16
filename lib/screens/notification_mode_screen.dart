@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/limit_service.dart';
 import '../widgets/specialization_picker.dart';
 
 const platform = MethodChannel('winatra/service');
@@ -238,7 +239,7 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
               ),
               child: remainingQuota == -1
                   ? const Text('Akses unlimited (Premium)', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 14))
-                  : Text('Sisa kuota hari ini: $remainingQuota dari 15', style: const TextStyle(color: Color(0xFF9B7EFF), fontSize: 14)),
+                  : Text('Sisa kuota hari ini: $remainingQuota dari ${LimitService.DAILY_LIMIT}', style: const TextStyle(color: Color(0xFF9B7EFF), fontSize: 14)),
             ),
             const SizedBox(height: 20),
             Row(
@@ -255,6 +256,57 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
                 const Text('Aktifkan Notifikasi AI', style: TextStyle(color: Colors.white)),
                 Switch(value: notifEnabled, onChanged: _toggleNotifEnabled, activeColor: const Color(0xFF6B4EFF)),
               ],
+            ),
+            const SizedBox(height: 20),
+            Card(
+              color: const Color(0xFF141426),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xFF6B4EFF))),
+              child: Column(
+                children: const [
+                  ExpansionTile(
+                    iconColor: Color(0xFF9B7EFF),
+                    collapsedIconColor: Color(0xFF9B7EFF),
+                    title: Text('Auto-Solve', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Text(
+                          'Otomatis menjawab saat clipboard berisi teks berakhiran ?. Cocok untuk jawaban cepat tanpa harus membuka aplikasi lagi.',
+                          style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    iconColor: Color(0xFF9B7EFF),
+                    collapsedIconColor: Color(0xFF9B7EFF),
+                    title: Text('Manual', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Text(
+                          'Tekan tombol "Jawab" di notifikasi untuk memproses pertanyaan dari clipboard. Kontrol penuh tanpa auto-respon.',
+                          style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  ExpansionTile(
+                    iconColor: Color(0xFF9B7EFF),
+                    collapsedIconColor: Color(0xFF9B7EFF),
+                    title: Text('Diskusi', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    children: [
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Text(
+                          'Mirip Manual, tetapi jawaban disajikan lebih panjang dan natural, seperti percakapan. Gunakan ketika butuh penjelasan lebih detail.',
+                          style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
             Container(

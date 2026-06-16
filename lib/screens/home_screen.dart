@@ -83,7 +83,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF141426),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF6B4EFF)),
+            ),
+            child: const Text(
+              'Winatra AI adalah aplikasi AI shortcut untuk belajar dan menjawab pertanyaan cepat langsung dari notifikasi atau keyboard. Gunakan fitur Keyboard, Notifikasi, dan AI Offline untuk pengalaman yang lebih nyaman.',
+              style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
+              textAlign: TextAlign.justify,
+            ),
+          ),
+          const SizedBox(height: 24),
           const Text('Mode Aktif', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF9B7EFF))),
           const SizedBox(height: 16),
           _buildFeatureCard(
