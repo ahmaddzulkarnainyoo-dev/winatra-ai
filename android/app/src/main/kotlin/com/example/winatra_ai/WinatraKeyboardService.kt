@@ -816,6 +816,42 @@ class WinatraKeyboardService : InputMethodService() {
 
     // ---------- WEIGHTED RANDOM API FALLBACK ----------
     private suspend fun callAIWithFallback(question: String, mode: String): String {
+        // Cek apakah Deep Analysis diaktifkan
+        val deepAnalysisEnabled = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("deep_analysis_enabled", false)
+        val isPremium = isUserPremium()
+        
+        if (deepAnalysisEnabled && isPremium) {
+            Log.d(TAG, "Deep Analysis: Enabled & Premium, attempting dual DeepSeek")
+            val primaryKey = getDeepSeekPrimaryKey()
+            val secondaryKey = getDeepSeekSecondaryKey()
+            
+            if (primaryKey.isNotEmpty() && secondaryKey.isNotEmpty()) {
+                // Langkah 1: Jawab pertanyaan dengan primaryKey
+                val answer = performApiRequestWithKey(primaryKey, question, mode)
+                if (answer != null && !answer.startsWith("Error:")) {
+                    Log.d(TAG, "Deep Analysis: Primary success, attempting secondary correction")
+                    // Langkah 2: Koreksi dengan secondaryKey
+                    val correctionPrompt = "Koreksi jawaban berikut. Jika salah, beri koreksi. Jika benar, katakan 'Jawaban sudah benar'. Jawaban: $answer"
+                    val correction = performApiRequestWithKey(secondaryKey, correctionPrompt, "Essay")
+                    
+                    return if (correction != null && !correction.startsWith("Error:")) {
+                        Log.d(TAG, "Deep Analysis: Secondary success, returning combined result")
+                        "$answer\n\n📝 Koreksi AI:\n$correction"
+                    } else {
+                        Log.w(TAG, "Deep Analysis: Secondary failed, returning primary answer only")
+                        answer // Kirim jawaban awal jika koreksi gagal
+                    }
+                } else {
+                    Log.w(TAG, "Deep Analysis: Primary failed, falling back to normal mode")
+                    // Jika primary gagal, fallback ke normal mode
+                }
+            } else {
+                Log.w(TAG, "Deep Analysis: Missing API keys, disabling feature")
+            }
+        }
+        
+        // Mode normal (satu API key dengan fallback berbobot)
         val candidates = WEIGHTED_ENDPOINTS.toMutableList()
         Log.i(TAG, "Starting API call with ${candidates.size} weighted candidates (Q: ${question.take(50)})")
         var attemptCount = 0
@@ -910,6 +946,96 @@ class WinatraKeyboardService : InputMethodService() {
             Log.e(TAG, "✗ ${endpoint.type} exception: ${e.message}", e)
             "Error: ${e.message}"
         }
+    }
+
+    // ---------- DEEP ANALYSIS (Dual DeepSeek) ----------
+    private fun getDeepSeekPrimaryKey(): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString("deepseek_primary", "") ?: ""
+    }
+
+    private fun getDeepSeekSecondaryKey(): String {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString("deepseek_secondary", "") ?: ""
+    }
+
+    private suspend fun performApiRequestWithKey(apiKey: String, question: String, mode: String): String? {
+        // Baca specialization dari SharedPreferences
+        val specialization = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("user_specialization", "general") ?: "general"
+        
+        // Ambil prompt spesialisasi dari mapping
+        val specializationPrompt = SPECIALIZATION_PROMPTS[specialization] 
+            ?: SPECIALIZATION_PROMPTS["general"]!!
+        
+        // Buat system prompt final
+        val systemPrompt = if (mode == "PG") {
+            "Jawab HANYA dengan satu huruf: A, B, C, atau D. Tidak perlu penjelasan."
+        } else {
+            "$specializationPrompt\n\nBerikan jawaban yang lengkap dan jelas dalam Bahasa Indonesia."
+        }
+
+        val json = JSONObject().apply {
+            put("model", "deepseek-chat")
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply { put("role", "system"); put("content", systemPrompt) })
+                put(JSONObject().apply { put("role", "user"); put("content", question) })
+            })
+            put("max_tokens", if (mode == "PG") 10 else 500)
+            put("temperature", 0.3)
+        }
+
+        // Validate API key
+        if (apiKey.isEmpty() || apiKey.startsWith("BUILD_")) {
+            Log.e(TAG, "❌ INVALID KEY FOR DEEP ANALYSIS: ${apiKey.take(10)}")
+            return "Error: invalid_key"
+        }
+
+        val url = "https://api.deepseek.com/v1/chat/completions"
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(json.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        return try {
+            Log.d(TAG, "→ Deep Analysis calling DeepSeek at $url")
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                var answer = JSONObject(body).getJSONArray("choices")
+                    .getJSONObject(0).getJSONObject("message").getString("content").trim()
+                if (mode == "PG") {
+                    val firstValid = answer.uppercase().firstOrNull { it in 'A'..'D' }
+                    answer = if (firstValid != null) firstValid.toString() else "?"
+                }
+                Log.d(TAG, "← Deep Analysis response: ${answer.take(50)}...")
+                answer
+            } else {
+                val errorMsg = when (response.code) {
+                    429, 503 -> "rate_limit"
+                    401, 403 -> "auth_failed"
+                    else -> response.code.toString()
+                }
+                Log.w(TAG, "✗ Deep Analysis failed ${response.code}: $errorMsg")
+                "Error: $errorMsg"
+            }
+        } catch (e: java.net.SocketTimeoutException) {
+            Log.w(TAG, "✗ Deep Analysis timeout: ${e.message}")
+            "Error: timeout"
+        } catch (e: java.io.IOException) {
+            Log.w(TAG, "✗ Deep Analysis network error: ${e.message}")
+            "Error: network"
+        } catch (e: Exception) {
+            Log.e(TAG, "✗ Deep Analysis exception: ${e.message}", e)
+            "Error: ${e.message}"
+        }
+    }
+
+    private fun isUserPremium(): Boolean {
+        // Implementasi sederhana - dalam praktik, ini harus async dengan Firestore
+        return getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean("is_premium", false)
     }
 
     private fun dp(v: Int) = TypedValue.applyDimension(

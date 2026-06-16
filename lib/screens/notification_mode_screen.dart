@@ -19,6 +19,7 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
   bool autoSolve = false;
   bool notifEnabled = true;
   bool offlineMode = false;
+  bool deepAnalysis = false;
   int remainingQuota = 0;
 
   @override
@@ -29,6 +30,7 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
     _loadNotifEnabled();
     _loadRemainingQuota();
     _loadOfflineMode();
+    _loadDeepAnalysis();
   }
 
   Future<void> _loadAutoSolve() async {
@@ -116,6 +118,28 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
     if (value && mounted) {
       _showOfflineEducationDialog();
     }
+  }
+
+  Future<void> _loadDeepAnalysis() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      deepAnalysis = prefs.getBool('deep_analysis_enabled') ?? false;
+    });
+  }
+
+  Future<void> _toggleDeepAnalysis(bool value) async {
+    final isPremium = await LimitService.isPremium();
+    if (value && !isPremium) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fitur ini hanya untuk pengguna Premium.')),
+      );
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('deep_analysis_enabled', value);
+    setState(() {
+      deepAnalysis = value;
+    });
   }
 
   void _showOfflineEducationDialog() {
@@ -358,6 +382,40 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: deepAnalysis ? const Color(0xFF6B4EFF) : const Color(0xFF333355), width: 1.5),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '🧠 Analisis Mendalam',
+                        style: TextStyle(color: Color(0xFF9B7EFF), fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      const SizedBox(height: 4),
+                      const SizedBox(
+                        width: 240,
+                        child: Text(
+                          'Gunakan dua AI untuk jawaban + koreksi (khusus DeepSeek).',
+                          style: TextStyle(color: Color(0xFF7B7B9E), fontSize: 12),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Switch(value: deepAnalysis, onChanged: _toggleDeepAnalysis, activeColor: const Color(0xFF6B4EFF)),
                 ],
               ),
             ),
