@@ -1,15 +1,41 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../routes.dart';
+import '../widgets/animated_pressable.dart';
 import 'notification_mode_screen.dart';
 import 'keyboard_mode_screen.dart';
 import 'offline_ai_screen.dart';
 import 'support_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool offlineMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOfflineMode();
+  }
+
+  Future<void> _loadOfflineMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      offlineMode = prefs.getBool('offline_mode_enabled') ?? false;
+    });
+  }
+
   void _navigateTo(BuildContext context, Widget page) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    Navigator.push(context, buildFadeSlideRoute(page)).then((_) {
+      // Refresh offline mode status when returning from another screen
+      _loadOfflineMode();
+    });
   }
 
   @override
@@ -20,12 +46,40 @@ class HomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Center(
-            child: Column(
+            child: Stack(
               children: [
-                Image.asset('assets/logo.png', width: 100, height: 100, errorBuilder: (_, __, ___) => const Icon(Icons.error, color: Colors.red)),
-                const SizedBox(height: 12),
-                const Text('WINATRA AI', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF9B7EFF), letterSpacing: 4)),
-                const Text('AI Shortcut di Genggaman', style: TextStyle(fontSize: 16, color: Color(0xFF6B4EFF))),
+                Column(
+                  children: [
+                    Image.asset('assets/logo.png', width: 100, height: 100, errorBuilder: (_, __, ___) => const Icon(Icons.error, color: Colors.red)),
+                    const SizedBox(height: 12),
+                    const Text('WINATRA AI', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF9B7EFF), letterSpacing: 4)),
+                    const Text('AI Shortcut di Genggaman', style: TextStyle(fontSize: 16, color: Color(0xFF6B4EFF))),
+                  ],
+                ),
+                if (offlineMode)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B4EFF),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF9B7EFF), width: 1),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cloud_off, size: 14, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            '🔒 Offline',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -91,12 +145,11 @@ class HomeScreen extends StatelessWidget {
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return Card(
-      color: const Color(0xFF1A1A2E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF6B4EFF), width: 1)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+    return AnimatedPressable(
+      onTap: onTap,
+      child: Card(
+        color: const Color(0xFF1A1A2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF6B4EFF), width: 1)),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -122,7 +175,7 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _socialButton(String label, String username, String url) {
-    return InkWell(
+    return AnimatedPressable(
       onTap: () async {
         if (await canLaunchUrl(Uri.parse(url))) {
           await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);

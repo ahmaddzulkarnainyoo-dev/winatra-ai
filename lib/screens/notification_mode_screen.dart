@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/specialization_picker.dart';
 
 const platform = MethodChannel('winatra/service');
 
@@ -16,6 +17,7 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
   late String mode;
   bool autoSolve = false;
   bool notifEnabled = true;
+  bool offlineMode = false;
   int remainingQuota = 0;
 
   @override
@@ -25,6 +27,7 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
     _loadAutoSolve();
     _loadNotifEnabled();
     _loadRemainingQuota();
+    _loadOfflineMode();
   }
 
   Future<void> _loadAutoSolve() async {
@@ -89,6 +92,100 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
     setState(() => mode = newMode);
   }
 
+  Future<void> _loadOfflineMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      offlineMode = prefs.getBool('offline_mode_enabled') ?? false;
+    });
+  }
+
+  Future<void> _toggleOfflineMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('offline_mode_enabled', value);
+    setState(() {
+      offlineMode = value;
+    });
+    
+    // Sinkronisasi ke Android service
+    try {
+      await platform.invokeMethod('setOfflineMode', {'enabled': value});
+    } catch (e) {}
+    
+    // Tampilkan dialog edukasi jika offline mode diaktifkan
+    if (value && mounted) {
+      _showOfflineEducationDialog();
+    }
+  }
+
+  void _showOfflineEducationDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            '🔒 Mode Offline Aktif',
+            style: TextStyle(color: Color(0xFF9B7EFF), fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Sekarang semua pertanyaan akan diproses oleh AI offline di HP Anda.',
+                  style: TextStyle(color: Color(0xFFCCCCDD), fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '✅ Keuntungan:',
+                  style: TextStyle(color: Color(0xFF6B4EFF), fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• Tanpa internet — hemat kuota\n• Privasi terjaga — data tidak keluar HP\n• Cepat — tidak perlu tunggu API',
+                  style: TextStyle(color: Color(0xFFBBBBEE), fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  '💡 Tips untuk jawaban lebih akurat:',
+                  style: TextStyle(color: Color(0xFF6B4EFF), fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• Upload dokumen (PDF/DOCX/TXT) di halaman "AI Offline"\n• Jawaban akan menggunakan materi yang Anda upload\n• Mode offline cocok untuk belajar tanpa gangguan',
+                  style: TextStyle(color: Color(0xFFBBBBEE), fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'ℹ️ Catatan:',
+                  style: TextStyle(color: Color(0xFFFFB84D), fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Jika model lokal tidak tersedia, akan otomatis fallback ke AI online.',
+                  style: TextStyle(color: Color(0xFFBBBBEE), fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6B4EFF),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Saya Mengerti', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -122,7 +219,16 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
+            // Tambahkan SpecializationPicker
+            SpecializationPicker(
+              currentSpecialization: null,
+              onSpecializationChanged: () {
+                // Reload state jika diperlukan
+                setState(() {});
+              },
+            ),
+            const SizedBox(height: 20),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
@@ -149,6 +255,59 @@ class _NotificationModeScreenState extends State<NotificationModeScreen> {
                 const Text('Aktifkan Notifikasi AI', style: TextStyle(color: Colors.white)),
                 Switch(value: notifEnabled, onChanged: _toggleNotifEnabled, activeColor: const Color(0xFF6B4EFF)),
               ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: offlineMode ? const Color(0xFF6B4EFF) : const Color(0xFF333355), width: 1.5),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '🔒 Mode Offline',
+                            style: TextStyle(color: Color(0xFF9B7EFF), fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          const SizedBox(height: 4),
+                          const SizedBox(
+                            width: 240,
+                            child: Text(
+                              'Gunakan AI lokal tanpa internet. Jawaban berdasarkan model offline & dokumen yang diupload.',
+                              style: TextStyle(color: Color(0xFF7B7B9E), fontSize: 12),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Switch(value: offlineMode, onChanged: _toggleOfflineMode, activeColor: const Color(0xFF6B4EFF)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () => _showOfflineEducationDialog(),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Color(0xFF6B4EFF), size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'Pelajari lebih lanjut',
+                          style: TextStyle(color: Color(0xFF6B4EFF), fontSize: 12, decoration: TextDecoration.underline),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 40),
             const Padding(

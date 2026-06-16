@@ -18,6 +18,7 @@ import 'screens/offline_ai_screen.dart';
 import 'screens/accessibility_settings_screen.dart';
 import 'screens/about_screen.dart';
 import 'services/limit_service.dart'; // <-- Tambah import ini
+import 'routes.dart';
 
 const platform = MethodChannel('winatra/service');
 
@@ -173,7 +174,7 @@ class _MainAppWrapperState extends State<MainAppWrapper> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('is_logged_in');
       if (mounted) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginScreen()));
+        Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
       }
       return;
     }
@@ -247,12 +248,14 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnim;
+  late Animation<double> _scaleAnim;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500));
     _fadeAnim = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _scaleAnim = Tween<double>(begin: 0.92, end: 1.0).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _controller.forward();
     
     // Check for updates early
@@ -270,13 +273,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     bool tosAccepted = prefs.getBool('tos_accepted') ?? false;
 
     if (!tosAccepted) {
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const TosScreen()));
+      if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(const TosScreen()));
       return;
     }
 
     bool isLoggedIn = prefs.getBool('is_logged_in') ?? false;
     if (!isLoggedIn) {
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginScreen()));
+      if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
       return;
     }
 
@@ -292,15 +295,15 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           try { await platform.invokeMethod('startService'); } catch (e) {}
           // Sinkronkan limit setelah login sukses
           await LimitService.syncRemainingToPrefs();
-          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainAppWrapper()));
+          if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(const MainAppWrapper()));
         } else {
-          if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginScreen()));
+          if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
         }
       } else {
-        if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginScreen()));
+        if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
       }
     } catch (e) {
-      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginScreen()));
+      if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
     }
   }
 
@@ -311,18 +314,21 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D1A),
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset('assets/logo.png', width: 160, height: 160),
-              const SizedBox(height: 24),
-              const Text('WINATRA', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 8)),
-              const SizedBox(height: 8),
-              const Text('AI BETA', style: TextStyle(color: Color(0xFF6B4EFF), fontSize: 14, letterSpacing: 6)),
-            ],
+      body: ScaleTransition(
+        scale: _scaleAnim,
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.asset('assets/logo.png', width: 160, height: 160),
+                const SizedBox(height: 24),
+                const Text('WINATRA', style: TextStyle(color: Color(0xFF9B7EFF), fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 8)),
+                const SizedBox(height: 8),
+                const Text('AI BETA', style: TextStyle(color: Color(0xFF6B4EFF), fontSize: 14, letterSpacing: 6)),
+              ],
+            ),
           ),
         ),
       ),
@@ -342,7 +348,7 @@ class _TosScreenState extends State<TosScreen> {
   Future<void> _accept() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('tos_accepted', true);
-    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => LoginScreen()));
+    if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
   }
 
   @override

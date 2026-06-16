@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../routes.dart';
 import '../services/accessibility_service.dart';
 import 'accessibility_guide.dart';
 
@@ -87,7 +88,7 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline, color: Colors.white),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccessibilityGuideScreen())),
+            onPressed: () => Navigator.push(context, buildFadeSlideRoute(const AccessibilityGuideScreen())),
           ),
         ],
       ),
@@ -176,7 +177,7 @@ class _AccessibilitySettingsScreenState extends State<AccessibilitySettingsScree
           ),
           const SizedBox(height: 12),
           ElevatedButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccessibilityGuideScreen())),
+            onPressed: () => Navigator.push(context, buildFadeSlideRoute(const AccessibilityGuideScreen())),
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF44475A), padding: const EdgeInsets.all(12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: const Text('Buka Panduan', style: TextStyle(color: Colors.white)),
           ),

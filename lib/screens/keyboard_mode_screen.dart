@@ -113,7 +113,7 @@ class _KeyboardModeScreenState extends State<KeyboardModeScreen> {
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const SupportScreen()));
+                Navigator.push(context, buildFadeSlideRoute(const SupportScreen()));
               },
               icon: const Icon(Icons.stars, color: Colors.white),
               label: const Text('Upgrade ke Premium (Rp5.000/hari)', style: TextStyle(color: Colors.white)),

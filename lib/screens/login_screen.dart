@@ -1,4 +1,5 @@
 ﻿import '../main.dart';
+import '../routes.dart';
 import 'register_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -68,10 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_logged_in', true);
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => MainAppWrapper()),
-          );
+          Navigator.pushReplacement(context, buildFadeSlideRoute(MainAppWrapper()));
         }
       } else if (status == 'pending') {
         setState(() { errorMessage = 'Akun sedang menunggu persetujuan admin.'; });
@@ -162,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(height: 16),
             TextButton(
               onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => RegisterScreen()));
+                Navigator.push(context, buildFadeSlideRoute(RegisterScreen()));
               },
               child: const Text('Belum punya akun? Daftar', style: TextStyle(color: Color(0xFF6B4EFF))),
             ),

@@ -1,5 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../routes.dart';
+import '../routes.dart';
 import 'login_screen.dart';
 
 class TosScreen extends StatefulWidget {
