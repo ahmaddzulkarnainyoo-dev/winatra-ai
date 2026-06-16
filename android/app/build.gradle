@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿plugins {
+=======
+plugins {
+>>>>>>> 37cfa566961953209c9f9cfc88453965aecd1e4a
     id 'com.android.application'
     id 'kotlin-android'
     id 'com.google.gms.google-services'

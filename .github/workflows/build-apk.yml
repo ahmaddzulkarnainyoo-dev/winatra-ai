@@ -22,7 +22,11 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+<<<<<<< HEAD
           flutter-version: '3.24.5'
+=======
+          flutter-version: '3.22.4'
+>>>>>>> 37cfa566961953209c9f9cfc88453965aecd1e4a
           channel: 'stable'
 
       - name: Create google-services.json

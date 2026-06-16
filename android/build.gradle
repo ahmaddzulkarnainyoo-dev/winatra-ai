@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 ﻿buildscript {
+=======
+buildscript {
+>>>>>>> 37cfa566961953209c9f9cfc88453965aecd1e4a
     ext.kotlin_version = '1.9.0'
     repositories {
         google()
