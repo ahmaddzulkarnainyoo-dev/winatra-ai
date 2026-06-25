@@ -25,43 +25,29 @@ jobs:
           flutter-version: '3.27.4'
           channel: 'stable'
 
-      - name: Create google-services.json (backup)
-        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > /tmp/google-services.json
-
-      - name: Regenerate Android folder for Flutter 3.27.4
+      - name: Backup google-services.json
         run: |
-          rm -rf android/
-          flutter create --project-name winatra_ai --platforms=android .
+          if [ -f android/app/google-services.json ]; then
+            cp android/app/google-services.json /tmp/google-services.json
+            echo "google-services.json backed up"
+          else
+            echo "No google-services.json found, will create empty placeholder"
+            echo '{}' > /tmp/google-services.json
+          fi
+
+      - name: Regenerate Android project with Flutter 3.27.4
+        run: |
+          flutter create --project-name winatra_ai --platforms=android --overwrite .
 
       - name: Restore google-services.json
-        run: mkdir -p android/app && cp /tmp/google-services.json android/app/google-services.json
-
-      - name: Override settings.gradle.kts with google-services plugin
         run: |
-          cat > android/settings.gradle.kts << 'EOF'
-          pluginManagement {
-              val flutterSdkPath = run {
-                  val properties = java.util.Properties()
-                  file("local.properties").inputStream().use { properties.load(it) }
-                  val flutterSdkPath = properties.getProperty("flutter.sdk")
-                  require(flutterSdkPath != null) { "flutter.sdk not set in local.properties" }
-                  flutterSdkPath
-              }
-              includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          plugins {
-              id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-              id("com.android.application") version "8.11.1" apply false
-              id("org.jetbrains.kotlin.android") version "2.2.20" apply false
-              id("com.google.gms.google-services") version "4.4.0" apply false
-          }
-          include(":app")
-          EOF
+          mkdir -p android/app
+          cp /tmp/google-services.json android/app/google-services.json
+
+      - name: Add google-services plugin to settings.gradle.kts
+        run: |
+          # Add google-services plugin line after the kotlin plugin line
+          sed -i 's/id("org.jetbrains.kotlin.android") version "2.2.20" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
 
       - name: Override app/build.gradle with custom dependencies
         run: |
@@ -109,6 +95,9 @@ jobs:
               coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
           }
           EOF
+
+      - name: Show generated android folder structure
+        run: ls -la android/ && cat android/settings.gradle.kts
 
       - name: Install dependencies
         run: flutter pub get
