@@ -39,22 +39,36 @@ jobs:
         run: |
           cd /tmp
           flutter create --project-name winatra_ai --platforms=android .
-          echo "Fresh Android project created in /tmp"
+          echo "=== Fresh Android project structure ==="
+          ls -la /tmp/android/
+          find /tmp/android -name "settings*" -type f
 
       - name: Replace android folder with fresh generated one
         run: |
           rm -rf android/
           cp -r /tmp/android .
-          echo "Android folder replaced with fresh generated structure"
+          echo "=== Copied android folder structure ==="
+          ls -la android/
+          find android -name "settings*" -type f
 
       - name: Restore google-services.json
         run: cp /tmp/google-services.json android/app/google-services.json
 
-      - name: Add google-services plugin to settings.gradle.kts
+      - name: Add google-services plugin to settings file
         run: |
-          sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
-          echo "=== settings.gradle.kts after modification ==="
-          cat android/settings.gradle.kts
+          SETTINGS_FILE=""
+          if [ -f android/settings.gradle.kts ]; then
+            SETTINGS_FILE="android/settings.gradle.kts"
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' "$SETTINGS_FILE"
+          elif [ -f android/settings.gradle ]; then
+            SETTINGS_FILE="android/settings.gradle"
+            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*" apply false/id "org.jetbrains.kotlin.android" version "2.2.20" apply false\n    id "com.google.gms.google-services" version "4.4.0" apply false/' "$SETTINGS_FILE"
+          else
+            echo "ERROR: No settings file found!"
+            exit 1
+          fi
+          echo "=== Modified $SETTINGS_FILE ==="
+          cat "$SETTINGS_FILE"
 
       - name: Override app/build.gradle with custom dependencies
         run: |
