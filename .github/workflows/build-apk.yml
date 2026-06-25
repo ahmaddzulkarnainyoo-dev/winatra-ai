@@ -31,23 +31,30 @@ jobs:
             cp android/app/google-services.json /tmp/google-services.json
             echo "google-services.json backed up"
           else
-            echo "No google-services.json found, will create empty placeholder"
             echo '{}' > /tmp/google-services.json
+            echo "Created empty google-services.json placeholder"
           fi
 
-      - name: Regenerate Android project with Flutter 3.27.4
+      - name: Generate fresh Android project in temp directory
         run: |
-          flutter create --project-name winatra_ai --platforms=android --overwrite .
+          cd /tmp
+          flutter create --project-name winatra_ai --platforms=android .
+          echo "Fresh Android project created in /tmp"
+
+      - name: Replace android folder with fresh generated one
+        run: |
+          rm -rf android/
+          cp -r /tmp/android .
+          echo "Android folder replaced with fresh generated structure"
 
       - name: Restore google-services.json
-        run: |
-          mkdir -p android/app
-          cp /tmp/google-services.json android/app/google-services.json
+        run: cp /tmp/google-services.json android/app/google-services.json
 
       - name: Add google-services plugin to settings.gradle.kts
         run: |
-          # Add google-services plugin line after the kotlin plugin line
-          sed -i 's/id("org.jetbrains.kotlin.android") version "2.2.20" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
+          sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
+          echo "=== settings.gradle.kts after modification ==="
+          cat android/settings.gradle.kts
 
       - name: Override app/build.gradle with custom dependencies
         run: |
@@ -95,9 +102,6 @@ jobs:
               coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
           }
           EOF
-
-      - name: Show generated android folder structure
-        run: ls -la android/ && cat android/settings.gradle.kts
 
       - name: Install dependencies
         run: flutter pub get
