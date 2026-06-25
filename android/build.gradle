@@ -1,10 +1,1 @@
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-}
-
-tasks.register('clean', Delete) {
-    delete rootProject.buildDir
-}
+// empty, all config in settings.gradle.kts
