@@ -11,8 +11,12 @@ jobs:
     timeout-minutes: 45
 
     steps:
+      # Step 1: Checkout repo ke folder sementara (/tmp/repo)
       - uses: actions/checkout@v4
+        with:
+          path: /tmp/repo
 
+      # Step 2: Setup Java + Flutter
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -25,69 +29,84 @@ jobs:
           flutter-version: '3.27.4'
           channel: 'stable'
 
-      - name: Debug - Flutter version & doctor
-        run: |
-          flutter --version
-          flutter doctor -v
+      # Step 3: Debug Flutter info
+      - name: Debug Flutter version
+        run: flutter --version
 
-      - name: Backup entire android folder + project files
+      # Step 4: Buat project Flutter BARU di folder terpisah
+      - name: Create fresh Flutter project
         run: |
-          cp -r android /tmp/android-backup
-          cp pubspec.yaml /tmp/pubspec.yaml
-          cp -r lib /tmp/lib
-          if [ -d assets ]; then cp -r assets /tmp/assets; fi
-          echo "Full backup completed"
-
-      - name: Delete android folder and regenerate from scratch
-        run: |
-          rm -rf android/
+          # Buat folder project baru
+          mkdir -p /tmp/fresh-project
+          cd /tmp/fresh-project
           flutter create --project-name winatra_ai --platforms=android .
-          echo "=== Fresh android folder generated ==="
-          ls -la android/
-          echo "=== Settings files ==="
-          find android -name "settings*" -type f
-          echo "=== Content of settings file ==="
-          cat android/settings.gradle.kts 2>/dev/null || cat android/settings.gradle 2>/dev/null || echo "NO SETTINGS FILE FOUND"
+          
+          echo "=== Fresh project created ==="
+          ls -la /tmp/fresh-project/
+          echo "=== android/ ==="
+          ls -la /tmp/fresh-project/android/
 
-      - name: Restore project files
+      # Step 5: Copy fresh project to workspace, then overlay source code
+      - name: Setup workspace with fresh project + source code
         run: |
-          cp /tmp/pubspec.yaml pubspec.yaml
+          # Hapus isi workspace
+          rm -rf ${{ github.workspace }}/*
+          rm -rf ${{ github.workspace }}/.gitattributes ${{ github.workspace }}/.gitignore 2>/dev/null || true
+          
+          # Copy fresh project ke workspace
+          cp -r /tmp/fresh-project/* ${{ github.workspace }}/
+          cp -r /tmp/fresh-project/.[!.]* ${{ github.workspace }}/ 2>/dev/null || true
+          
+          # Sekarang overlay source code dari repo
+          cd ${{ github.workspace }}
+          
+          # Copy pubspec.yaml
+          cp /tmp/repo/pubspec.yaml pubspec.yaml
+          
+          # Copy lib/
           rm -rf lib/
-          cp -r /tmp/lib .
-          if [ -d /tmp/assets ]; then
+          cp -r /tmp/repo/lib .
+          
+          # Copy assets/
+          if [ -d /tmp/repo/assets ]; then
             rm -rf assets/
-            cp -r /tmp/assets .
+            cp -r /tmp/repo/assets .
           fi
-          echo "Project files restored"
-
-      - name: Restore google-services.json from backup
-        run: |
-          if [ -f /tmp/android-backup/app/google-services.json ]; then
+          
+          # Copy google-services.json
+          if [ -f /tmp/repo/android/app/google-services.json ]; then
             mkdir -p android/app
-            cp /tmp/android-backup/app/google-services.json android/app/google-services.json
-            echo "google-services.json restored from backup"
+            cp /tmp/repo/android/app/google-services.json android/app/google-services.json
+            echo "google-services.json copied"
           else
-            echo "No google-services.json in backup, creating placeholder"
-            echo '{}' > android/app/google-services.json
+            echo "{}" > android/app/google-services.json
+            echo "google-services.json placeholder created"
           fi
+          
+          echo "=== Workspace ready ==="
 
-      - name: Add google-services to settings.gradle
+      # Step 6: Add google-services plugin
+      - name: Add google-services plugin
         run: |
+          cd ${{ github.workspace }}
+          
           if [ -f android/settings.gradle.kts ]; then
             sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
-            echo "=== Modified settings.gradle.kts ==="
+            echo "=== settings.gradle.kts ==="
             cat android/settings.gradle.kts
           elif [ -f android/settings.gradle ]; then
             sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*" apply false/id "org.jetbrains.kotlin.android" version "2.2.20" apply false\n    id "com.google.gms.google-services" version "4.4.0" apply false/' android/settings.gradle
-            echo "=== Modified settings.gradle ==="
+            echo "=== settings.gradle ==="
             cat android/settings.gradle
           else
-            echo "ERROR: No settings file found!"
+            echo "ERROR: No settings file!"
             exit 1
           fi
 
-      - name: Override app/build.gradle with custom dependencies
+      # Step 7: Override app/build.gradle
+      - name: Override app/build.gradle
         run: |
+          cd ${{ github.workspace }}
           cat > android/app/build.gradle << 'EOF'
           plugins {
               id "com.android.application"
@@ -132,29 +151,38 @@ jobs:
               coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
           }
           EOF
-          echo "=== app/build.gradle ==="
-          cat android/app/build.gradle
+          
+          echo "=== app/build.gradle written ==="
 
-      - name: Debug - Check project structure before build
+      # Step 8: Debug final structure
+      - name: Debug final project structure
         run: |
-          echo "=== Project root ==="
+          cd ${{ github.workspace }}
+          echo "=== Workspace content ==="
           ls -la
-          echo "=== android/ ==="
-          ls -la android/
-          echo "=== android/app/ ==="
-          ls -la android/app/
           echo "=== pubspec.yaml exists ==="
           test -f pubspec.yaml && echo "YES" || echo "NO"
+          echo "=== android/settings file ==="
+          find android -name "settings*" -type f
+          echo "=== android/app/build.gradle ==="
+          head -20 android/app/build.gradle
 
+      # Step 9: Install dependencies
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          cd ${{ github.workspace }}
+          flutter pub get
 
+      # Step 10: Build APK
       - name: Build APK
-        run: flutter build apk --release --split-per-abi
+        run: |
+          cd ${{ github.workspace }}
+          flutter build apk --release --split-per-abi
 
+      # Step 11: Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: winatra-ai-release
-          path: build/app/outputs/flutter-apk/*.apk
+          path: ${{ github.workspace }}/build/app/outputs/flutter-apk/*.apk
           retention-days: 7
