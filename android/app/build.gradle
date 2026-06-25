@@ -1,6 +1,5 @@
 plugins {
     id "com.android.application"
-    // id "kotlin-android"   // <-- HAPUS baris ini
     id "com.google.gms.google-services"
 }
 
@@ -18,7 +17,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.winatra.ai"
+        applicationId "com.winatra.ai"   // sesuaikan dengan package-mu
         minSdk 23
         targetSdk 34
         versionCode 1
