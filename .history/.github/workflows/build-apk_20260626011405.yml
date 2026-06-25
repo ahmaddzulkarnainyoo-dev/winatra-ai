@@ -22,7 +22,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.41.9'
           channel: 'stable'
 
       - name: Restore google-services.json
@@ -38,7 +38,7 @@ jobs:
         run: |
           cat > android/app/build.gradle.kts << 'EOF'
           plugins {
-              id("com.android.application")
+              id("com.android.application") version "8.1.1"
               id("kotlin-android")
               id("dev.flutter.flutter-gradle-plugin")
           }
