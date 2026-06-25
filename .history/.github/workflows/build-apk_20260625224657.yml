@@ -1,0 +1,117 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: 'stable'
+
+      - name: Backup google-services.json
+        run: |
+          if [ -f android/app/google-services.json ]; then
+            cp android/app/google-services.json /tmp/google-services.json
+            echo "google-services.json backed up"
+          else
+            echo '{}' > /tmp/google-services.json
+            echo "Created empty google-services.json placeholder"
+          fi
+
+      - name: Generate fresh Android project in temp directory
+        run: |
+          cd /tmp
+          flutter create --project-name winatra_ai --platforms=android .
+          echo "Fresh Android project created in /tmp"
+
+      - name: Replace android folder with fresh generated one
+        run: |
+          rm -rf android/
+          cp -r /tmp/android .
+          echo "Android folder replaced with fresh generated structure"
+
+      - name: Restore google-services.json
+        run: cp /tmp/google-services.json android/app/google-services.json
+
+      - name: Add google-services plugin to settings.gradle.kts
+        run: |
+          sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
+          echo "=== settings.gradle.kts after modification ==="
+          cat android/settings.gradle.kts
+
+      - name: Override app/build.gradle with custom dependencies
+        run: |
+          cat > android/app/build.gradle << 'EOF'
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+              id "com.google.gms.google-services"
+          }
+
+          android {
+              compileSdk 34
+              ndkVersion "27.0.12077973"
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+                  coreLibraryDesugaringEnabled true
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+
+              defaultConfig {
+                  applicationId "com.example.winatra_ai"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+
+          dependencies {
+              implementation "com.squareup.okhttp3:okhttp:4.12.0"
+              implementation platform("com.google.firebase:firebase-bom:33.7.0")
+              implementation "com.google.firebase:firebase-auth"
+              implementation "com.google.firebase:firebase-firestore"
+              coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
+          }
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: winatra-ai-release
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 7

@@ -1,0 +1,160 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: 'stable'
+
+      - name: Debug - Flutter version & doctor
+        run: |
+          flutter --version
+          flutter doctor -v
+
+      - name: Backup entire android folder + project files
+        run: |
+          cp -r android /tmp/android-backup
+          cp pubspec.yaml /tmp/pubspec.yaml
+          cp -r lib /tmp/lib
+          if [ -d assets ]; then cp -r assets /tmp/assets; fi
+          echo "Full backup completed"
+
+      - name: Delete android folder and regenerate from scratch
+        run: |
+          rm -rf android/
+          flutter create --project-name winatra_ai --platforms=android .
+          echo "=== Fresh android folder generated ==="
+          ls -la android/
+          echo "=== Settings files ==="
+          find android -name "settings*" -type f
+          echo "=== Content of settings file ==="
+          cat android/settings.gradle.kts 2>/dev/null || cat android/settings.gradle 2>/dev/null || echo "NO SETTINGS FILE FOUND"
+
+      - name: Restore project files
+        run: |
+          cp /tmp/pubspec.yaml pubspec.yaml
+          rm -rf lib/
+          cp -r /tmp/lib .
+          if [ -d /tmp/assets ]; then
+            rm -rf assets/
+            cp -r /tmp/assets .
+          fi
+          echo "Project files restored"
+
+      - name: Restore google-services.json from backup
+        run: |
+          if [ -f /tmp/android-backup/app/google-services.json ]; then
+            mkdir -p android/app
+            cp /tmp/android-backup/app/google-services.json android/app/google-services.json
+            echo "google-services.json restored from backup"
+          else
+            echo "No google-services.json in backup, creating placeholder"
+            echo '{}' > android/app/google-services.json
+          fi
+
+      - name: Add google-services to settings.gradle
+        run: |
+          if [ -f android/settings.gradle.kts ]; then
+            sed -i 's/id("org.jetbrains.kotlin.android") version "[^"]*" apply false/id("org.jetbrains.kotlin.android") version "2.2.20" apply false\n    id("com.google.gms.google-services") version "4.4.0" apply false/' android/settings.gradle.kts
+            echo "=== Modified settings.gradle.kts ==="
+            cat android/settings.gradle.kts
+          elif [ -f android/settings.gradle ]; then
+            sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*" apply false/id "org.jetbrains.kotlin.android" version "2.2.20" apply false\n    id "com.google.gms.google-services" version "4.4.0" apply false/' android/settings.gradle
+            echo "=== Modified settings.gradle ==="
+            cat android/settings.gradle
+          else
+            echo "ERROR: No settings file found!"
+            exit 1
+          fi
+
+      - name: Override app/build.gradle with custom dependencies
+        run: |
+          cat > android/app/build.gradle << 'EOF'
+          plugins {
+              id "com.android.application"
+              id "kotlin-android"
+              id "com.google.gms.google-services"
+          }
+
+          android {
+              compileSdk 34
+              ndkVersion "27.0.12077973"
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+                  coreLibraryDesugaringEnabled true
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+
+              defaultConfig {
+                  applicationId "com.example.winatra_ai"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+
+          dependencies {
+              implementation "com.squareup.okhttp3:okhttp:4.12.0"
+              implementation platform("com.google.firebase:firebase-bom:33.7.0")
+              implementation "com.google.firebase:firebase-auth"
+              implementation "com.google.firebase:firebase-firestore"
+              coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"
+          }
+          EOF
+          echo "=== app/build.gradle ==="
+          cat android/app/build.gradle
+
+      - name: Debug - Check project structure before build
+        run: |
+          echo "=== Project root ==="
+          ls -la
+          echo "=== android/ ==="
+          ls -la android/
+          echo "=== android/app/ ==="
+          ls -la android/app/
+          echo "=== pubspec.yaml exists ==="
+          test -f pubspec.yaml && echo "YES" || echo "NO"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: winatra-ai-release
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 7
