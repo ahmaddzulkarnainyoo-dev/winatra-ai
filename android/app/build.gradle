@@ -1,31 +1,26 @@
 plugins {
     id "com.android.application"
-    id "kotlin-android"
-    id "dev.flutter.flutter-gradle-plugin"
+    // id "kotlin-android"   // <-- HAPUS baris ini
     id "com.google.gms.google-services"
 }
 
 android {
-    compileSdkVersion 34
-    ndkVersion flutter.ndkVersion
+    compileSdk 34
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
-        jvmTarget = '17'
-    }
-
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
+        jvmTarget = "17"
     }
 
     defaultConfig {
         applicationId "com.winatra.ai"
-        minSdkVersion 23
-        targetSdkVersion 34
+        minSdk 23
+        targetSdk 34
         versionCode 1
         versionName "1.0.0"
         multiDexEnabled true
@@ -41,11 +36,8 @@ android {
     }
 }
 
-flutter {
-    source '../..'
-}
-
 dependencies {
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.google.firebase:firebase-analytics:21.6.0'
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
 }
