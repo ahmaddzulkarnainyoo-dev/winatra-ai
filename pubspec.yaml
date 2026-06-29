@@ -1,4 +1,4 @@
-﻿name: winatra_ai
+name: winatra_ai
 description: AI Shortcut with persistent notification and Groq API
 version: 1.0.5+1
 
@@ -16,7 +16,7 @@ dependencies:
   firebase_auth: ^4.17.0
   cloud_firestore: ^4.15.0
   url_launcher: ^6.2.5
-  android_intent_plus: ^5.0.0
+  android_intent_plus: 4.0.0
   flutter_local_notifications: ^17.0.0
   file_picker: ^8.0.0
   path_provider: ^2.1.0
