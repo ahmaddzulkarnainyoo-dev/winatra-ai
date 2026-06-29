@@ -1,6 +1,11 @@
 package com.example.winatra_ai
 
+>>>>>>> 51d4322fa
+import android.content.Context
 import android.Manifest
+import android.content.Context
+=======
+>>>>>>> 51d4322fa
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
