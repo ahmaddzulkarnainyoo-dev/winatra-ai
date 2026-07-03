@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "41894398402",
+    "firebase_url": "https://winatra-ai-de4f8-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "winatra-ai-de4f8",
+    "storage_bucket": "winatra-ai-de4f8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:41894398402:android:b6345fa9486dcdb9b12e5b",
+        "android_client_info": {
+          "package_name": "com.example.winatra_ai"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB527ri9YD0_emyQDZmGBrMLxiGXrbRU4g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
