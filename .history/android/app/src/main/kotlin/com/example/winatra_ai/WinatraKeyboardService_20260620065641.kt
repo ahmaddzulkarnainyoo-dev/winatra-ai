@@ -3,8 +3,8 @@
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.content.res.ColorStateList
 import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.ColorStateList
 import android.inputmethodservice.InputMethodService
 import android.util.Log
 import android.util.TypedValue
