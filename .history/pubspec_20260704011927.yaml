@@ -27,7 +27,6 @@ dependencies:
   onenm_local_llm: ^0.1.4
   permission_handler: ^11.0.0
   archive: ^3.3.1
-  provider: ^6.1.5+1
 
 dev_dependencies:
   flutter_test:

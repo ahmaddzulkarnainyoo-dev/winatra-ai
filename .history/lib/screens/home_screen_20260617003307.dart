@@ -1,12 +1,11 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:provider/provider.dart';
-import '../providers/app_mode_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../routes.dart';
 import '../widgets/animated_pressable.dart';
 import 'notification_mode_screen.dart';
 import 'keyboard_mode_screen.dart';
-import 'chat_room_screen.dart';
+import 'offline_ai_screen.dart';
 import 'support_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,14 +16,30 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool offlineMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOfflineMode();
+  }
+
+  Future<void> _loadOfflineMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      offlineMode = prefs.getBool('offline_mode_enabled') ?? false;
+    });
+  }
+
   void _navigateTo(BuildContext context, Widget page) {
-    Navigator.push(context, buildFadeSlideRoute(page));
+    Navigator.push(context, buildFadeSlideRoute(page)).then((_) {
+      // Refresh offline mode status when returning from another screen
+      _loadOfflineMode();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final appMode = context.watch<AppModeProvider>();
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -37,89 +52,53 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Image.asset('assets/logo.png', width: 100, height: 100, errorBuilder: (_, __, ___) => const Icon(Icons.error, color: Colors.red)),
                     const SizedBox(height: 12),
-                    Text(
-                      'WINATRA AI',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: appMode.accentColor,
-                        letterSpacing: 4,
-                      ),
-                    ),
-                    Text(
-                      'AI Shortcut di Genggaman',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: appMode.primaryColor,
-                      ),
-                    ),
+                    const Text('WINATRA AI', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF9B7EFF), letterSpacing: 4)),
+                    const Text('AI Shortcut di Genggaman', style: TextStyle(fontSize: 16, color: Color(0xFF6B4EFF))),
                   ],
                 ),
+                if (offlineMode)
+                  Positioned(
+                    top: 0,
+                    right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B4EFF),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF9B7EFF), width: 1),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cloud_off, size: 14, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            '🔒 Offline',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
           const SizedBox(height: 24),
-
-          // ── MODE BADGE ──
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: appMode.surfaceColor,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: appMode.isOffline
-                      ? const Color(0xFF00CC88).withOpacity(0.5)
-                      : appMode.cardBorderColor,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    appMode.isOffline ? Icons.lock : Icons.public,
-                    size: 16,
-                    color: appMode.isOffline
-                        ? const Color(0xFF00CC88)
-                        : appMode.accentColor,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    appMode.isOffline ? 'Mode Offline Aktif' : 'Mode Online',
-                    style: TextStyle(
-                      color: appMode.isOffline
-                          ? const Color(0xFF00CC88)
-                          : appMode.accentColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // ── DESKRIPSI ──
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: appMode.surfaceColor,
+              color: const Color(0xFF141426),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: appMode.cardBorderColor),
+              border: Border.all(color: const Color(0xFF6B4EFF)),
             ),
-            child: Text(
-              'Winatra AI adalah aplikasi AI shortcut untuk belajar dan menjawab pertanyaan cepat langsung dari notifikasi atau keyboard. Gunakan fitur Keyboard, Notifikasi, dan Bot Chat untuk pengalaman yang lebih nyaman.',
-              style: TextStyle(
-                color: appMode.textColor,
-                fontSize: 13,
-              ),
+            child: const Text(
+              'Winatra AI adalah aplikasi AI shortcut untuk belajar dan menjawab pertanyaan cepat langsung dari notifikasi atau keyboard. Gunakan fitur Keyboard, Notifikasi, dan AI Offline untuk pengalaman yang lebih nyaman.',
+              style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 13),
               textAlign: TextAlign.justify,
             ),
           ),
           const SizedBox(height: 24),
-
           const Text('Mode Aktif', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF9B7EFF))),
           const SizedBox(height: 16),
           _buildFeatureCard(
@@ -140,10 +119,10 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 16),
           _buildFeatureCard(
             context: context,
-            title: 'Ngobrol Bareng Winatra',
-            description: 'Chat dengan AI. Bisa online (Groq) atau offline (lokal). Upload materi untuk jawaban lebih akurat.',
-            icon: Icons.chat_bubble,
-            onTap: () => _navigateTo(context, const ChatRoomScreen()),
+            title: 'AI Offline (Winatra Core)',
+            description: 'Jalankan AI tanpa internet (dalam pengembangan). Nanti bisa upload materi sendiri.',
+            icon: Icons.cloud_off,
+            onTap: () => _navigateTo(context, const OfflineAIScreen()),
           ),
           const SizedBox(height: 32),
           Center(
@@ -181,20 +160,16 @@ class _HomeScreenState extends State<HomeScreen> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    final appMode = context.read<AppModeProvider>();
     return AnimatedPressable(
       onTap: onTap,
       child: Card(
-        color: appMode.surfaceColor,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: appMode.cardBorderColor, width: 1),
-        ),
+        color: const Color(0xFF1A1A2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF6B4EFF), width: 1)),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(icon, color: appMode.accentColor, size: 40),
+              Icon(icon, color: const Color(0xFF9B7EFF), size: 40),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -206,7 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios, color: appMode.accentColor, size: 16),
+              const Icon(Icons.arrow_forward_ios, color: Color(0xFF9B7EFF), size: 16),
             ],
           ),
         ),
@@ -240,3 +215,5 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
