@@ -27,11 +27,37 @@ jobs:
 
       - name: Restore google-services.json
         run: |
+          mkdir -p android/app
           if [ -f android/app/google-services.json ]; then
             echo "google-services.json already exists"
           else
-            cp android/app/google-services-ci.json android/app/google-services.json
-            echo "Using CI dummy google-services.json"
+            python3 -c "
+import json
+config = {
+    'project_info': {
+        'project_number': '000000000000',
+        'project_id': 'dummy-project'
+    },
+    'client': [{
+        'client_info': {
+            'mobilesdk_app_id': '1:000000000000:android:0000000000000000',
+            'android_client_info': {
+                'package_name': 'com.example.winatra_ai'
+            }
+        },
+        'oauth_client': [],
+        'api_key': [{'current_key': 'AIzaSyDummyKey00000000000000000000000000000'}],
+        'services': {
+            'appinvite_service': {
+                'other_platform_oauth_client': []
+            }
+        }
+    }],
+    'configuration_version': '1'
+}
+with open('android/app/google-services.json', 'w') as f:
+    json.dump(config, f, indent=2)
+"
           fi
 
       - name: Verify build.gradle.kts exists
