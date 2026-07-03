@@ -91,16 +91,16 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: GlowText(
-                        'WINATRA AI',
-                        glowColor: appMode.accentColor,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                          color: appMode.accentColor,
+                        child: GlowText(
+                          text: 'WINATRA AI',
+                          glowColor: appMode.accentColor,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2,
+                            color: appMode.accentColor,
+                          ),
                         ),
-                      ),
                     ),
                   ],
                 ),
