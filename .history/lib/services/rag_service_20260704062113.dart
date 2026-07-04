@@ -198,6 +198,7 @@ class RAGService {
       final buffer = StringBuffer();
 
       for (int i = 0; i < pdfDoc.pages.count; i++) {
+        final page = pdfDoc.pages[i];
         final text = PdfTextExtractor(pdfDoc).extractText(startPageIndex: i, endPageIndex: i);
         buffer.writeln(text);
         buffer.writeln();
@@ -410,20 +411,6 @@ class RAGService {
       print('RAGService: Error clearing documents: $e');
       return false;
     }
-  }
-
-  /// Get all documents with full details (for keyboard/notification services)
-  static Future<List<Map<String, dynamic>>> getAllDocuments() async {
-    if (!_isInitialized) {
-      print('RAGService: Service not initialized');
-      return [];
-    }
-    return List.from(_documents);
-  }
-
-  /// Search across all documents for a query (for keyboard/notification services)
-  static Future<String> searchAllDocuments(String query) async {
-    return await searchContext(query);
   }
 
   /// Dispose service

@@ -11,11 +11,16 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/app_mode_provider.dart';
+import 'providers/brain_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
 import 'screens/sidebar_drawer.dart';
+import 'screens/support_screen.dart';
+import 'screens/chat_room_screen.dart';
+import 'screens/about_screen.dart';
 import 'services/limit_service.dart';
 import 'services/chat_history_service.dart';
+import 'services/rag_service.dart';
 import 'routes.dart';
 
 const platform = MethodChannel('winatra/service');

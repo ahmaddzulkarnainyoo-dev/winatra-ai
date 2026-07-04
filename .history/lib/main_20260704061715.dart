@@ -12,8 +12,13 @@ import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/app_mode_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/main_navigation_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/notification_mode_screen.dart';
+import 'screens/keyboard_mode_screen.dart';
 import 'screens/sidebar_drawer.dart';
+import 'screens/support_screen.dart';
+import 'screens/chat_room_screen.dart';
+import 'screens/about_screen.dart';
 import 'services/limit_service.dart';
 import 'services/chat_history_service.dart';
 import 'routes.dart';
@@ -23,11 +28,6 @@ const platform = MethodChannel('winatra/service');
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  
-  // Initialize Hive for local storage
-  await Hive.initFlutter();
-  await ChatHistoryService.initialize();
-  
   AwesomeNotifications().initialize(
     null,
     [
@@ -315,7 +315,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           try { await platform.invokeMethod('startService'); } catch (e) {}
           // Sinkronkan limit setelah login sukses
           await LimitService.syncRemainingToPrefs();
-          if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(const MainNavigationScreen()));
+          if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(const MainAppWrapper()));
         } else {
           if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
         }

@@ -73,6 +73,7 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Logo kecil
                 Row(
                   children: [
                     Container(
@@ -118,6 +119,38 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
 
           const SizedBox(height: 8),
 
+          // ── MENU ITEMS ──
+          _buildMenuItem(
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home,
+            title: 'Beranda',
+            index: 0,
+          ),
+          _buildMenuItem(
+            icon: Icons.notifications_outlined,
+            activeIcon: Icons.notifications_active,
+            title: 'Notifikasi',
+            index: 1,
+          ),
+          _buildMenuItem(
+            icon: Icons.keyboard_outlined,
+            activeIcon: Icons.keyboard,
+            title: 'Keyboard',
+            index: 2,
+          ),
+          _buildMenuItem(
+            icon: Icons.chat_bubble_outline,
+            activeIcon: Icons.chat_bubble,
+            title: 'Ngobrol Bareng Winatra',
+            index: 3,
+          ),
+
+          // ── DIVIDER ──
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Divider(color: appMode.cardBorderColor.withOpacity(0.3)),
+          ),
+
           // ── MODE AI TOGGLE ──
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -140,24 +173,18 @@ class _SidebarDrawerState extends State<SidebarDrawer> {
             child: Divider(color: appMode.cardBorderColor.withOpacity(0.3)),
           ),
 
-          // ── MENU ITEMS ──
+          // ── BOTTOM MENU ──
           _buildMenuItem(
-            icon: Icons.help_outline,
-            activeIcon: Icons.help,
-            title: 'Bantuan & Panduan',
+            icon: Icons.favorite_outline,
+            activeIcon: Icons.favorite,
+            title: 'Dukung Kami',
             index: 4,
-          ),
-          _buildMenuItem(
-            icon: Icons.share_outlined,
-            activeIcon: Icons.share,
-            title: 'Bagikan Aplikasi',
-            index: 5,
           ),
           _buildMenuItem(
             icon: Icons.info_outline,
             activeIcon: Icons.info,
-            title: 'Tentang',
-            index: 6,
+            title: 'Tentang Aplikasi',
+            index: 5,
           ),
 
           const Spacer(),

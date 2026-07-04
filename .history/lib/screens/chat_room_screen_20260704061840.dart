@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_mode_provider.dart';
-import '../providers/brain_provider.dart';
 import '../services/ai_service.dart';
 import '../services/limit_service.dart';
 import '../services/rag_service.dart';
@@ -28,10 +27,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   double _downloadProgress = 0.0;
   bool _isDownloading = false;
 
+  // RAG
+  List<Map<String, dynamic>> _uploadedDocs = [];
+  bool _useRAG = false;
+
   @override
   void initState() {
     super.initState();
     _loadChatHistory();
+    _initializeRAG();
     _checkLocalModel();
   }
 
@@ -50,7 +54,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   }
 
   Future<void> _checkLocalModel() async {
+    // If already initialized, skip
     if (_aiService.isLocalReady) return;
+  }
+
+  Future<void> _initializeRAG() async {
+    try {
+      final success = await RAGService.initialize();
+      if (success) {
+        _refreshDocuments();
+      }
+    } catch (e) {
+      print('RAG init error: $e');
+    }
   }
 
   Future<void> _initLocalAI() async {
@@ -69,6 +85,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
           if (!mounted) return;
           setState(() {
             _statusMessage = status;
+            // Parse progress from status like "Downloading... (42.3%)"
             final pctMatch = RegExp(r'(\d+\.?\d*)%').firstMatch(status);
             if (pctMatch != null) {
               _downloadProgress = double.parse(pctMatch.group(1)!) / 100.0;
@@ -100,11 +117,43 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     }
   }
 
-  Future<void> _clearChat() async {
+  Future<void> _refreshDocuments() async {
+    final docs = await RAGService.getDocuments();
+    if (mounted) {
+      setState(() {
+        _uploadedDocs = docs;
+        _useRAG = docs.isNotEmpty;
+      });
+    }
+  }
+
+  Future<void> _uploadDocument() async {
+    final filePath = await RAGService.pickDocument();
+    if (filePath == null) return;
+
     setState(() {
-      _messages.clear();
+      _statusMessage = 'Mengupload dokumen...';
     });
-    await ChatHistoryService.clearHistory();
+
+    try {
+      final success = await RAGService.uploadDocument(filePath);
+      if (success) {
+        setState(() => _statusMessage = 'Dokumen berhasil diupload!');
+        _refreshDocuments();
+      } else {
+        setState(() => _statusMessage = 'Gagal mengupload dokumen.');
+      }
+    } catch (e) {
+      setState(() => _statusMessage = 'Error: $e');
+    }
+  }
+
+  Future<void> _deleteDocument(String docId) async {
+    final success = await RAGService.deleteDocument(docId);
+    if (success) {
+      setState(() => _statusMessage = 'Dokumen dihapus');
+      _refreshDocuments();
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -137,11 +186,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
     _saveChatHistory();
 
     try {
-      // Get RAG context from The Brain (all documents)
+      // Get RAG context if available
       String context = '';
-      try {
+      if (_useRAG) {
         context = await RAGService.searchContext(message);
-      } catch (_) {}
+      }
 
       final systemPrompt = context.isNotEmpty
           ? '''Kamu adalah Winatra AI, asisten belajar yang membantu.
@@ -200,9 +249,7 @@ $context'''
   @override
   Widget build(BuildContext context) {
     final appMode = context.watch<AppModeProvider>();
-    final brainProvider = context.watch<BrainProvider>();
-    final docCount = brainProvider.documentCount;
-    final activeDoc = brainProvider.activeContextDoc;
+    final docCount = _uploadedDocs.length;
 
     return Scaffold(
       backgroundColor: appMode.bgColor,
@@ -231,7 +278,7 @@ $context'''
         actions: [
           // Mode indicator
           Container(
-            margin: const EdgeInsets.only(right: 4),
+            margin: const EdgeInsets.only(right: 8),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: appMode.isOffline
@@ -268,48 +315,40 @@ $context'''
               ],
             ),
           ),
-          // New Chat button
-          IconButton(
-            icon: Icon(Icons.add_comment, color: appMode.accentColor, size: 20),
-            onPressed: _clearChat,
-            tooltip: 'Chat Baru',
-          ),
+          // Document count badge
+          if (docCount > 0)
+            Stack(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.folder, color: appMode.accentColor),
+                  onPressed: _showDocuments,
+                  tooltip: 'Dokumen',
+                ),
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: appMode.primaryColor,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$docCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       body: Column(
         children: [
-          // Context indicator bar
-          if (docCount > 0)
-            GestureDetector(
-              onTap: () {
-                // Show context selection dialog
-                _showContextSelector();
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: const Color(0xFF6B4EFF).withOpacity(0.1),
-                child: Row(
-                  children: [
-                    Icon(Icons.account_tree, color: appMode.accentColor, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        activeDoc != null
-                            ? 'Konteks: ${activeDoc['name']}'
-                            : '$docCount dokumen tersedia di The Brain',
-                        style: TextStyle(
-                          color: appMode.accentColor,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Icon(Icons.chevron_right, color: appMode.accentColor, size: 18),
-                  ],
-                ),
-              ),
-            ),
-
           // Status bar
           if (_statusMessage.isNotEmpty)
             Container(
@@ -349,6 +388,52 @@ $context'''
               ),
             ),
 
+          // Upload prompt (if no documents and not downloading)
+          if (docCount == 0 && !_isLoading && !_isDownloading && _messages.isEmpty)
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: appMode.surfaceColor,
+                border: Border.all(color: appMode.cardBorderColor, width: 1.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.cloud_upload_outlined,
+                      color: appMode.accentColor, size: 32),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Upload Materi Belajar',
+                    style: TextStyle(
+                      color: appMode.headerTextColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Upload PDF, DOCX, atau TXT untuk jawaban yang lebih akurat berdasarkan materi Anda.',
+                    style: TextStyle(color: appMode.textColor, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _uploadDocument,
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text('Upload Dokumen',
+                        style: TextStyle(color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: appMode.primaryColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Chat messages
           if (!_isDownloading)
             Expanded(
@@ -378,17 +463,6 @@ $context'''
                               fontSize: 12,
                             ),
                           ),
-                          if (docCount > 0)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                'Materi dari The Brain akan digunakan sebagai konteks.',
-                                style: TextStyle(
-                                  color: appMode.accentColor.withOpacity(0.7),
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
                           if (appMode.isOffline && !_aiService.isLocalReady)
                             Padding(
                               padding: const EdgeInsets.only(top: 16),
@@ -467,6 +541,22 @@ $context'''
               ),
               child: Row(
                 children: [
+                  if (docCount == 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: AnimatedPressable(
+                        onTap: _uploadDocument,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: appMode.primaryColor,
+                          ),
+                          padding: const EdgeInsets.all(10),
+                          child: const Icon(Icons.cloud_upload,
+                              color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
@@ -518,124 +608,97 @@ $context'''
     );
   }
 
-  void _showContextSelector() {
-    final brainProvider = context.read<BrainProvider>();
-    final docs = brainProvider.documents;
+  void _showDocuments() {
     final appMode = context.read<AppModeProvider>();
-
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.folder, color: appMode.accentColor, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Dokumen Saya (${_uploadedDocs.length})',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _uploadedDocs.isEmpty
+              ? Center(
+                  child: Column(
                     children: [
-                      Icon(Icons.account_tree, color: appMode.accentColor, size: 24),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Pilih Materi',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      const Icon(Icons.folder_open_outlined,
+                          color: Color(0xFF6B4EFF), size: 48),
+                      const SizedBox(height: 12),
+                      const Text('Belum ada dokumen',
+                          style: TextStyle(color: Color(0xFFCCCCDD))),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Pilih dokumen dari The Brain sebagai konteks jawaban AI',
-                    style: TextStyle(color: Color(0xFFCCCCCC), fontSize: 12),
-                  ),
-                  const SizedBox(height: 16),
-                  if (docs.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(
-                        child: Text(
-                          'Belum ada dokumen di The Brain',
-                          style: TextStyle(color: Color(0xFFCCCCCC)),
-                        ),
+                )
+              : ListView.builder(
+                  itemCount: _uploadedDocs.length,
+                  itemBuilder: (context, index) {
+                    final doc = _uploadedDocs[index];
+                    final name = doc['name'] ?? 'Unknown';
+                    final docId = doc['id'] ?? '';
+                    return Container(
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A2E),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white10),
                       ),
-                    )
-                  else
-                    SizedBox(
-                      height: 200,
-                      child: ListView.builder(
-                        itemCount: docs.length,
-                        itemBuilder: (context, index) {
-                          final doc = docs[index];
-                          final name = doc['name'] as String? ?? 'Unknown';
-                          final isActive = brainProvider.activeContextDoc?['id'] == doc['id'];
-                          return Container(
-                            margin: const EdgeInsets.symmetric(vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? const Color(0xFF6B4EFF).withOpacity(0.15)
-                                  : const Color(0xFF2A2A2E),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isActive
-                                    ? const Color(0xFF6B4EFF).withOpacity(0.5)
-                                    : Colors.white10,
-                              ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.description,
+                              color: Color(0xFF6B4EFF), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            child: ListTile(
-                              leading: Icon(
-                                Icons.description,
-                                color: isActive
-                                    ? const Color(0xFF9B7EFF)
-                                    : Colors.white54,
-                              ),
-                              title: Text(
-                                name,
-                                style: TextStyle(
-                                  color: isActive ? const Color(0xFF9B7EFF) : Colors.white,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              trailing: isActive
-                                  ? const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 20)
-                                  : null,
-                              onTap: () {
-                                brainProvider.setActiveContext(isActive ? null : doc);
-                                Navigator.pop(context);
-                              },
-                            ),
-                          );
-                        },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline,
+                                color: Colors.red, size: 18),
+                            onPressed: () {
+                              _deleteDocument(docId);
+                              Navigator.pop(context);
+                            },
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
                       ),
-                    ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      onPressed: () {
-                        brainProvider.setActiveContext(null);
-                        Navigator.pop(context);
-                      },
-                      child: const Text(
-                        'Nonaktifkan Konteks',
-                        style: TextStyle(color: Color(0xFFFF5252)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _uploadDocument,
+            child: const Text('➕ Tambah Dokumen',
+                style: TextStyle(color: Color(0xFF6B4EFF))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup',
+                style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
     );
   }
 }
