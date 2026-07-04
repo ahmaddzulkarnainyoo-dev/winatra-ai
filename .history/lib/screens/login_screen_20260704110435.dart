@@ -69,10 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_logged_in', true);
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            buildFadeSlideRoute(MainNavigationScreen()),
-          );
+Navigator.pushReplacement(context, buildFadeSlideRoute(MainNavigationScreen()));
         }
       } else if (status == 'pending') {
         setState(() { errorMessage = 'Akun sedang menunggu persetujuan admin.'; });
