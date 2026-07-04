@@ -225,7 +225,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           try { await platform.invokeMethod('startService'); } catch (e) {}
           // Sinkronkan limit setelah login sukses
           await LimitService.syncRemainingToPrefs();
-          if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(MainNavigationScreen()));
+          if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(const MainNavigationScreen()));
         } else {
           if (mounted) Navigator.pushReplacement(context, buildFadeSlideRoute(LoginScreen()));
         }

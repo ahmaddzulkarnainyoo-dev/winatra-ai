@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../providers/app_mode_provider.dart';
 import '../../services/limit_service.dart';
-import '../../routes.dart';
 import '../login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
