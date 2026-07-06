@@ -506,32 +506,12 @@ class WinatraService : Service() {
             return
         }
         
-        showResultNotification("Winatra AI", "⏳ Memproses (The Brain)...")
+        showResultNotification("Winatra AI", "⏳ Memproses...")
         scope.launch {
             resetDailyQuotaIfNeeded()
             val isPremium = isUserPremium()
             if (!isPremium && !checkAndShowLimit()) return@launch
-            
-            // Try to use FlutterBridge (The Brain + AI) first
-            var answer = ""
-            var usedBridge = false
-            if (FlutterBridge.isReady()) {
-                try {
-                    answer = FlutterBridge.getAnswer(question)
-                    if (!answer.startsWith("Error:")) {
-                        usedBridge = true
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "FlutterBridge failed: ${e.message}")
-                }
-            }
-            
-            // Fallback to direct API call if bridge failed
-            if (!usedBridge) {
-                Log.w(TAG, "Falling back to direct API call (bridge not available or failed)")
-                answer = callAIWithFallback(question, if (modeType == "discussion") "Essay" else getMode())
-            }
-            
+            val answer = callAIWithFallback(question, if (modeType == "discussion") "Essay" else getMode())
             withContext(Dispatchers.Main) {
                 if (answer.startsWith("Error:")) {
                     val msg = when {

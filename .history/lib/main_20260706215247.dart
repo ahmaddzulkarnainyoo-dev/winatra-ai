@@ -17,9 +17,6 @@ import 'screens/sidebar_drawer.dart';
 import 'services/limit_service.dart';
 import 'services/chat_history_service.dart';
 import 'services/notification_handler.dart';
-import 'services/robot_interaction_service.dart';
-import 'providers/robot_state_provider.dart';
-import 'widgets/floating_robot.dart';
 import 'routes.dart';
 
 const platform = MethodChannel('winatra/service');
@@ -50,18 +47,7 @@ void main() async {
     ],
   );
 
-  runApp(MultiProvider(
-    providers: [
-      ChangeNotifierProvider(create: (_) => AppModeProvider()..load()),
-      ChangeNotifierProvider(create: (_) {
-        final provider = RobotStateProvider();
-        provider.startIdleAnimation();
-        RobotInteractionService().init(provider);
-        return provider;
-      }),
-    ],
-    child: const MyApp(home: SplashScreen()),
-  ));
+  runApp(const MyApp(home: SplashScreen()));
 }
 
 class MyApp extends StatelessWidget {
@@ -70,33 +56,29 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appMode = context.watch<AppModeProvider>();
-
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: appMode.primaryColor,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        scaffoldBackgroundColor: appMode.bgColor,
-        appBarTheme: AppBarTheme(
-          backgroundColor: appMode.bgColor,
-          foregroundColor: appMode.headerTextColor,
-        ),
-        cardColor: appMode.surfaceColor,
-        dividerColor: appMode.cardBorderColor.withOpacity(0.3),
-      ),
-      home: Stack(
-        children: [
-          home,
-          // Floating robot overlay (only on mobile)
-          if (!kIsWeb)
-            const Positioned.fill(
-              child: FloatingRobot(),
+    return ChangeNotifierProvider(
+      create: (_) => AppModeProvider()..load(),
+      child: Consumer<AppModeProvider>(
+        builder: (context, appMode, _) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: appMode.primaryColor,
+                brightness: Brightness.dark,
+              ),
+              useMaterial3: true,
+              scaffoldBackgroundColor: appMode.bgColor,
+              appBarTheme: AppBarTheme(
+                backgroundColor: appMode.bgColor,
+                foregroundColor: appMode.headerTextColor,
+              ),
+              cardColor: appMode.surfaceColor,
+              dividerColor: appMode.cardBorderColor.withOpacity(0.3),
             ),
-        ],
+            home: home,
+          );
+        },
       ),
     );
   }

@@ -94,7 +94,9 @@ class MyApp extends StatelessWidget {
           // Floating robot overlay (only on mobile)
           if (!kIsWeb)
             const Positioned.fill(
-              child: FloatingRobot(),
+              child: IgnorePointer(
+                child: FloatingRobot(),
+              ),
             ),
         ],
       ),
