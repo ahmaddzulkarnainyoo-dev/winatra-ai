@@ -24,8 +24,6 @@ import 'providers/robot_state_provider.dart';
 import 'providers/assistant_state_provider.dart';
 import 'providers/voice_provider.dart';
 import 'widgets/floating_robot.dart';
-import 'widgets/floating_bubble.dart';
-import 'providers/bubble_state_provider.dart';
 import 'routes.dart';
 
 const platform = MethodChannel('winatra/service');
@@ -78,7 +76,6 @@ void main() async {
         });
         return voiceProvider;
       }),
-      ChangeNotifierProvider(create: (_) => BubbleStateProvider()),
     ],
     child: const MyApp(home: SplashScreen()),
   ));
@@ -111,15 +108,10 @@ class MyApp extends StatelessWidget {
       home: Stack(
         children: [
           home,
-          // Floating robot overlay for voice assistant (only on mobile)
+          // Floating robot overlay (only on mobile)
           if (!kIsWeb)
             const Positioned.fill(
               child: FloatingRobot(),
-            ),
-          // Floating bubble for quick chat (only on mobile)
-          if (!kIsWeb)
-            const Positioned.fill(
-              child: FloatingBubble(),
             ),
         ],
       ),
