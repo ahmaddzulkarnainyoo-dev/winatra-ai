@@ -58,6 +58,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         icon: Icons.keyboard,
         detailPage: (_) => const KeyboardModeScreen(),
       ),
+      AppFeature(
+        id: 'chat',
+        name: 'Ngobrol Bareng Winatra',
+        description: 'Chat dengan AI. Bisa online (Groq) atau offline (lokal). Upload materi untuk jawaban lebih akurat.',
+        icon: Icons.chat_bubble,
+        detailPage: (_) => const ChatRoomScreen(),
+      ),
     ];
   }
 

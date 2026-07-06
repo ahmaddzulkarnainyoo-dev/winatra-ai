@@ -61,12 +61,6 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun checkIfKeyboardEnabled(): Boolean {
-        val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        val enabledInputMethods = inputMethodManager.enabledInputMethodList
-        return enabledInputMethods.any { it.packageName == packageName }
-    }
-
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 

@@ -10,7 +10,6 @@ import '../../services/notification_handler.dart';
 import '../../routes.dart';
 import '../login_screen.dart';
 import 'notification_guide_screen.dart';
-import 'instruction_guide_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});

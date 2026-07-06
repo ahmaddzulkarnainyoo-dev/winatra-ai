@@ -10,7 +10,6 @@ import '../../services/notification_handler.dart';
 import '../../routes.dart';
 import '../login_screen.dart';
 import 'notification_guide_screen.dart';
-import 'instruction_guide_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -369,11 +368,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     trailing: Icon(Icons.chevron_right, color: appMode.textColor.withOpacity(0.5)),
-                  onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const InstructionGuideScreen()),
-                      );
+                    onTap: () {
+                      // Akan diimplementasikan di P9: Panduan Instruksi
                     },
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                   ),

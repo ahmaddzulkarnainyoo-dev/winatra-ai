@@ -19,10 +19,8 @@ import 'services/limit_service.dart';
 import 'services/chat_history_service.dart';
 import 'services/notification_handler.dart' as bridge;
 import 'services/robot_interaction_service.dart';
-import 'services/voice_command_service.dart';
 import 'providers/robot_state_provider.dart';
 import 'providers/assistant_state_provider.dart';
-import 'providers/voice_provider.dart';
 import 'widgets/floating_robot.dart';
 import 'routes.dart';
 
@@ -67,14 +65,6 @@ void main() async {
         final provider = AssistantActiveProvider();
         provider.load();
         return provider;
-      }),
-      ChangeNotifierProvider(create: (_) {
-        final voiceProvider = VoiceProvider();
-        // Initialize VoiceCommandService with providers
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // This will be called after all providers are available
-        });
-        return voiceProvider;
       }),
     ],
     child: const MyApp(home: SplashScreen()),

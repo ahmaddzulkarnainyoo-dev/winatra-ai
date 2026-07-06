@@ -101,11 +101,9 @@ Jawab langsung pertanyaannya tanpa basa-basi.''',
   }
 
   /// Check if Winatra keyboard is enabled in system settings
-  static const _serviceChannel = MethodChannel('winatra/service');
-
   static Future<bool> isKeyboardEnabled() async {
     try {
-      final bool result = await _serviceChannel.invokeMethod('isKeyboardEnabled');
+      final bool result = await _channel.invokeMethod('isKeyboardEnabled');
       return result;
     } catch (e) {
       print('NotificationHandler: Error checking keyboard: $e');
@@ -116,7 +114,7 @@ Jawab langsung pertanyaannya tanpa basa-basi.''',
   /// Open system keyboard settings
   static Future<void> openKeyboardSettings() async {
     try {
-      await _serviceChannel.invokeMethod('openKeyboardSettings');
+      await _channel.invokeMethod('openKeyboardSettings');
     } catch (e) {
       print('NotificationHandler: Error opening keyboard settings: $e');
     }
