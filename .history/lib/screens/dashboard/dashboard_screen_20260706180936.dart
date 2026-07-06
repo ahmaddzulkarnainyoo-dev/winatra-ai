@@ -72,7 +72,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final prefs = await SharedPreferences.getInstance();
     final map = <String, bool>{};
     for (final f in _features) {
-      map[f.id] = prefs.getBool(f.prefsKey) ?? true;
+      map[f.id] = prefs.getBool('feature_${f.id}_enabled') ?? true;
     }
     if (mounted) setState(() => _featureEnabled = map);
   }
@@ -83,29 +83,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() => _featureEnabled[feature.id] = value);
     }
 
-    const platform = MethodChannel('winatra/service');
-    switch (feature.id) {
-      case 'notification':
-        try {
-          if (value) {
-            await platform.invokeMethod('startService');
-          } else {
-            await platform.invokeMethod('stopService');
-            await platform.invokeMethod('cancelNotification');
-          }
-        } catch (_) {}
-        break;
-      case 'keyboard':
-        if (!value) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Keyboard Winatra dinonaktifkan.')),
-          );
+    // Sinkronisasi dengan service native jika perlu
+    if (feature.id == 'notification') {
+      const platform = MethodChannel('winatra/service');
+      try {
+        if (value) {
+          await platform.invokeMethod('startService');
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Keyboard Winatra diaktifkan.')),
-          );
+          await platform.invokeMethod('stopService');
+          await platform.invokeMethod('cancelNotification');
         }
-        break;
+      } catch (_) {}
     }
   }
 
