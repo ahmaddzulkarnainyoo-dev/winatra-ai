@@ -29,6 +29,10 @@ dependencies:
   archive: ^3.3.1
   provider: ^6.1.5+1
   syncfusion_flutter_pdf: ^33.2.13
+  speech_to_text:
+    git:
+      url: https://github.com/csdcorp/speech_to_text.git
+      ref: master
   flutter_tts: ^3.8.3
 
 dev_dependencies:
